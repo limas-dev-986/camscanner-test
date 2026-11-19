@@ -210,48 +210,48 @@
 
     // Quality gates first
     if (stats) {
-      if (stats.clippedFrac > t.maxClippedFrac) reasons.push('too many saturated pixels (glare)');
-      if (stats.spreadL !== null && stats.spreadL > t.maxSpreadL) reasons.push('region not uniform (edge, label or glare inside)');
+      if (stats.clippedFrac > t.maxClippedFrac) reasons.push('prea mulți pixeli saturați (reflexii)');
+      if (stats.spreadL !== null && stats.spreadL > t.maxSpreadL) reasons.push('zonă neuniformă (conține o margine, eticheta sau o reflexie)');
     }
-    if (lch.L < t.minL) reasons.push('too dark');
-    if (lch.L > t.maxL) reasons.push('too bright');
+    if (lch.L < t.minL) reasons.push('prea întunecat');
+    if (lch.L > t.maxL) reasons.push('prea luminos');
 
     const growthHue = hueIn(lch.h, t.growthHueMin, t.growthHueMax);
     const purpleHue = hueIn(lch.h, t.purpleHueMin, t.purpleHueMax);
 
     // A clear colour change is reported even if quality is imperfect (fail-safe direction).
     if (growthHue && lch.C >= t.minChroma) {
-      reasons.unshift('hue in yellow/green band');
+      reasons.unshift('nuanță în intervalul galben/verde');
       return out('growth');
     }
     if (reasons.length) return out('uncertain');
 
     if (lch.C < t.minChroma) {
-      reasons.push('colour too grey (low chroma)');
+      reasons.push('culoare prea cenușie (saturație scăzută)');
       return out('uncertain');
     }
 
     if (purpleHue) {
       if (dePurple !== null) {
         if (dePurple > t.maxDePurple) {
-          reasons.push('hue is purple but too far from purple reference');
+          reasons.push('nuanța este violet, dar prea departe de referința violet');
           return out('uncertain');
         }
         if (deYellow !== null && deYellow - dePurple < t.marginDe) {
-          reasons.push('not clearly closer to purple than to yellow reference');
+          reasons.push('culoarea nu este clar mai apropiată de referința violet decât de cea galbenă');
           return out('uncertain');
         }
       }
-      reasons.push(dePurple !== null ? 'hue in purple band, matches purple reference' : 'hue in purple band (not calibrated)');
+      reasons.push(dePurple !== null ? 'nuanță în intervalul violet, corespunde referinței violet' : 'nuanță în intervalul violet (necalibrat)');
       return out('no_growth');
     }
 
     // Outside both hue bands
     if (deYellow !== null && deYellow <= t.maxDeYellow && (dePurple === null || deYellow < dePurple)) {
-      reasons.push('closest to yellow reference');
+      reasons.push('cea mai apropiată de referința galbenă');
       return out('growth');
     }
-    reasons.push('hue outside purple and yellow/green bands');
+    reasons.push('nuanță în afara intervalelor violet și galben/verde');
     return out('uncertain');
   }
 
@@ -314,7 +314,7 @@
     const G = Math.max(1, Math.round(t.grid));
     const cw = (x1 - x0) / G, ch = (y1 - y0) / G;
     const step = Math.max(1, Math.floor(Math.sqrt(((x1 - x0) * (y1 - y0)) / 160000)));
-    if (x1 - x0 < 20 || y1 - y0 < 20) return { error: 'Selected area too small.' };
+    if (x1 - x0 < 20 || y1 - y0 < 20) return { error: 'Zona selectată este prea mică.' };
 
     // Pass 1: luminance per cell, paper colour
     const cellY = Array.from({ length: G * G }, () => []);
@@ -332,7 +332,7 @@
         allY.push(Y);
       }
     }
-    if (!allY.length) return { error: 'Area fully saturated (glare).' };
+    if (!allY.length) return { error: 'Zonă complet saturată (reflexii).' };
     allY.sort((a, b) => a - b);
     const paperYGlobal = percentile(allY, 0.9);
     const cellPaper = cellY.map((ys) => {
@@ -403,25 +403,25 @@
     const res = (cls) => ({ cls, reasons, metrics, cells, rect: { x0, y0, x1, y1 } });
 
     if (inkFrac < t.minInkFrac || used.length < Math.ceil(G * G * 0.4)) {
-      reasons.push('too few stripe pixels: select the printed pattern only');
+      reasons.push('prea puține dungi în zona selectată: selectați doar modelul imprimat');
       return res('uncertain');
     }
     // Fail checks first (fail-safe direction)
-    if (pinkFrac >= t.failPinkFrac) reasons.push('pink remaining (' + Math.round(pinkFrac * 100) + '% of stripes)');
-    else if (maxCellPink >= t.failCellPinkFrac) reasons.push('pink remaining in part of the sheet (worst area ' + Math.round(maxCellPink * 100) + '%)');
+    if (pinkFrac >= t.failPinkFrac) reasons.push('a rămas roz (' + Math.round(pinkFrac * 100) + '% din dungi)');
+    else if (maxCellPink >= t.failCellPinkFrac) reasons.push('a rămas roz într-o parte a testului (zona cea mai afectată: ' + Math.round(maxCellPink * 100) + '%)');
     // Uneven darkening only fails if the lightest area is not black (black vs. slightly less black is fine)
-    if (spreadL >= t.failSpreadL && worstCellL > t.passWorstCellL) reasons.push('uneven darkening: lightest area L* ' + worstCellL.toFixed(0) + ' (ΔL* ' + spreadL.toFixed(0) + ')');
-    if (medianInkL >= t.failInkL) reasons.push('stripes not dark (L* ' + medianInkL.toFixed(0) + ')');
-    if (minInkRatio < t.failInkRatio) reasons.push('stripes faint or missing in part of the sheet');
+    if (spreadL >= t.failSpreadL && worstCellL > t.passWorstCellL) reasons.push('înnegrire neuniformă: zona cea mai deschisă are L* ' + worstCellL.toFixed(0) + ' (ΔL* ' + spreadL.toFixed(0) + ')');
+    if (medianInkL >= t.failInkL) reasons.push('dungile nu sunt închise la culoare (L* ' + medianInkL.toFixed(0) + ')');
+    if (minInkRatio < t.failInkRatio) reasons.push('dungi șterse sau lipsă într-o parte a testului');
     if (reasons.length) return res('fail');
 
-    if (clippedFrac > t.maxClippedFrac) reasons.push('glare on the sheet');
-    if (pinkFrac > t.passPinkFrac || maxCellPink > t.passCellPinkFrac) reasons.push('some pink detected');
-    if (worstCellL > t.passWorstCellL) reasons.push('an area is not fully black (L* ' + worstCellL.toFixed(0) + ')');
-    if (medianInkL > t.passInkL) reasons.push('stripes not fully black');
-    if (minInkRatio < t.passInkRatio) reasons.push('stripe density uneven');
+    if (clippedFrac > t.maxClippedFrac) reasons.push('reflexii pe test');
+    if (pinkFrac > t.passPinkFrac || maxCellPink > t.passCellPinkFrac) reasons.push('s-a detectat puțin roz');
+    if (worstCellL > t.passWorstCellL) reasons.push('o zonă nu este complet neagră (L* ' + worstCellL.toFixed(0) + ')');
+    if (medianInkL > t.passInkL) reasons.push('dungile nu sunt complet negre');
+    if (minInkRatio < t.passInkRatio) reasons.push('densitate neuniformă a dungilor');
     if (reasons.length) return res('uncertain');
-    reasons.push('uniform black, no pink');
+    reasons.push('negru uniform, fără roz');
     return res('pass');
   }
 

@@ -4,7 +4,7 @@
   const C = window.Colour;
   const D = window.Detect;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-19.6';
+  const BUILD = '2026-11-19.7';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -61,6 +61,11 @@
   const pct = (v) => (v === null || v === undefined ? '' : Math.round(v * 1000) / 10 + '%');
   const round = (v, d) => (v === null || v === undefined || v === '' ? '' : Number(Number(v).toFixed(d === undefined ? 2 : d)));
   const nowIso = () => new Date().toISOString();
+  // Interface text is Romanian; values stored in the log stay as stable English codes.
+  const KIND_RO = { exposure: 'expunere', wb: 'balans de alb', focus: 'focalizare', torch: 'lanternă' };
+  const REF_RO = { purple: 'violet', yellow: 'galben' };
+  const CLS_RO = { pass: 'trecut', fail: 'eșuat', uncertain: 'incert', unknown: 'necunoscut', no_growth: 'trecut', growth: 'eșuat' };
+  const optionText = (selectId, value) => { const o = Array.from($(selectId).options).find((x) => x.value === value); return o ? o.textContent : value; };
 
   // ======================================================================
   // Object (product) selection
@@ -70,8 +75,8 @@
     $('selProduct').value = state.product.id;
     const vial = state.product.method === 'vial';
     $('productHint').textContent = vial
-      ? 'Reads the liquid at the bottom of the vial. Optional white reference: the white part of the label.'
-      : 'Reads the whole printed pattern of the sheet, area by area. Hold the phone parallel to the sheet; avoid shadows and reflections.';
+      ? 'Se citește lichidul din partea de jos a fiolei. Referință de alb opțională: partea albă a etichetei.'
+      : 'Se citește întregul model imprimat al testului, zonă cu zonă. Țineți telefonul paralel cu testul; evitați umbrele și reflexiile.';
     $('roiSizeRow').classList.toggle('hidden', !vial);
     $('btnSkipWhite').classList.toggle('hidden', !vial);
     $('btnAutoRoi').classList.toggle('hidden', !state.product.autoRegion);
@@ -80,10 +85,10 @@
     $('calibBox').classList.toggle('hidden', !state.product.calibration);
     $('refSection').classList.toggle('hidden', !state.product.calibration);
     const exp = $('expected');
-    exp.innerHTML = '<option value="">— select —</option>' +
+    exp.innerHTML = '<option value="">— selectați —</option>' +
       '<option value="pass">' + escapeHtml(state.product.expected.pass) + '</option>' +
       '<option value="fail">' + escapeHtml(state.product.expected.fail) + '</option>' +
-      '<option value="unknown">Unknown</option>';
+      '<option value="unknown">Necunoscut</option>';
     resetRegions();
     renderThresholds();
     saveSession();
@@ -94,8 +99,8 @@
   // ======================================================================
   async function startCamera(deviceId) {
     const status = $('camStatus');
-    if (!window.isSecureContext) { status.innerHTML = '<span class="warn">Not a secure context (HTTPS). The camera will not work.</span>'; return; }
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { status.innerHTML = '<span class="warn">getUserMedia is not available in this browser.</span>'; return; }
+    if (!window.isSecureContext) { status.innerHTML = '<span class="warn">Pagina nu este deschisă printr-o conexiune securizată (HTTPS). Camera nu va funcționa.</span>'; return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { status.innerHTML = '<span class="warn">Acest browser nu permite accesul la cameră (getUserMedia).</span>'; return; }
     stopCamera();
     const video_c = deviceId
       ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
@@ -103,7 +108,7 @@
     try {
       state.stream = await navigator.mediaDevices.getUserMedia({ video: video_c, audio: false });
     } catch (e) {
-      status.innerHTML = '<span class="warn">Camera error: ' + escapeHtml(e.name + ' ' + e.message) + '</span>';
+      status.innerHTML = '<span class="warn">Eroare la pornirea camerei: ' + escapeHtml(e.name + ' ' + e.message) + '</span>';
       return;
     }
     state.track = state.stream.getVideoTracks()[0];
@@ -115,8 +120,8 @@
     state.locks = { exposure: false, wb: false, focus: false, torch: false };
     ['lockExposure', 'lockWB', 'lockFocus', 'torch'].forEach((id) => ($(id).checked = false));
     try { state.imageCapture = 'ImageCapture' in window ? new ImageCapture(state.track) : null; } catch (e) { state.imageCapture = null; }
-    status.textContent = 'Camera: ' + (state.track.label || 'unnamed') + ' · ' + video.videoWidth + '×' + video.videoHeight;
-    $('btnStart').textContent = 'Restart camera';
+    status.textContent = 'Cameră: ' + (state.track.label || 'fără nume') + ' · ' + video.videoWidth + '×' + video.videoHeight;
+    $('btnStart').textContent = 'Repornește camera';
     await listCameras();
     updateLockAvailability();
     await refreshCapabilities();
@@ -155,11 +160,11 @@
     $('lockFocus').disabled = !has('focusMode', 'manual');
     $('torch').disabled = !('torch' in caps);
     const unsupported = [];
-    if ($('lockExposure').disabled) unsupported.push('exposure lock');
-    if ($('lockWB').disabled) unsupported.push('white balance lock');
-    if ($('lockFocus').disabled) unsupported.push('focus lock');
-    if ($('torch').disabled) unsupported.push('torch');
-    $('lockStatus').textContent = unsupported.length ? 'Not exposed by this phone/browser: ' + unsupported.join(', ') + '.' : 'All camera controls are exposed.';
+    if ($('lockExposure').disabled) unsupported.push('blocarea expunerii');
+    if ($('lockWB').disabled) unsupported.push('blocarea balansului de alb');
+    if ($('lockFocus').disabled) unsupported.push('blocarea focalizării');
+    if ($('torch').disabled) unsupported.push('lanterna');
+    $('lockStatus').textContent = unsupported.length ? 'Indisponibile pe acest telefon/browser: ' + unsupported.join(', ') + '.' : 'Toate reglajele camerei sunt disponibile.';
   }
 
   // Lock = switch to manual mode and pin the value the camera is using right now.
@@ -182,12 +187,12 @@
     try {
       await state.track.applyConstraints({ advanced: [c] });
       state.locks[kind] = on;
-      $('lockStatus').textContent = kind + (on ? ' locked/on' : ' auto/off') + ' · applied: ' + JSON.stringify(c);
+      $('lockStatus').textContent = KIND_RO[kind] + (on ? ': blocat / pornit' : ': automat / oprit') + ' · aplicat: ' + JSON.stringify(c);
     } catch (e) {
       state.locks[kind] = false;
       const box = { exposure: 'lockExposure', wb: 'lockWB', focus: 'lockFocus', torch: 'torch' }[kind];
       $(box).checked = false;
-      $('lockStatus').innerHTML = '<span class="warn">Could not set ' + kind + ': ' + escapeHtml(e.name + ' ' + e.message) + '</span>';
+      $('lockStatus').innerHTML = '<span class="warn">Nu s-a putut aplica reglajul (' + KIND_RO[kind] + '): ' + escapeHtml(e.name + ' ' + e.message) + '</span>';
     }
   }
 
@@ -264,16 +269,16 @@
   function startAuto() {
     hookOrientation();
     state.auto.active = true; state.auto.last = null; state.auto.stable = 0;
-    $('btnCapture').textContent = 'Cancel';
+    $('btnCapture').textContent = 'Anulează';
     $('autoStatus').classList.remove('hidden');
-    $('autoStatus').textContent = 'Looking for the striped pattern…';
+    $('autoStatus').textContent = 'Se caută modelul cu dungi…';
     autoTick();
   }
 
   function stopAuto() {
     if (state.auto.timer) clearTimeout(state.auto.timer);
     state.auto.active = false; state.auto.timer = null;
-    $('btnCapture').textContent = 'Capture';
+    $('btnCapture').textContent = 'Fotografiază';
     $('autoStatus').classList.add('hidden');
     octxLive.clearRect(0, 0, overlay.width, overlay.height);
   }
@@ -285,11 +290,11 @@
     const d = D.detectPattern(g.image.data, g.image.width, g.image.height);
     let msg = '', ok = false;
     octxLive.clearRect(0, 0, overlay.width, overlay.height);
-    if (!d.found) msg = 'Looking for the striped pattern…';
-    else if (d.touchesBorder) msg = 'Move back: keep the whole pattern inside the dashed frame';
-    else if (d.areaFrac < t.minAreaFrac) msg = 'Move closer';
-    else if (t.useTiltSensor && tiltFresh() && state.tilt.deg > t.maxTiltDeg) msg = 'Hold the phone flatter: ' + Math.round(state.tilt.deg) + '° (max ' + t.maxTiltDeg + '°)';
-    else if (d.sideRatio > t.maxSideRatio) msg = 'Hold the phone more parallel to the sheet';
+    if (!d.found) msg = 'Se caută modelul cu dungi…';
+    else if (d.touchesBorder) msg = 'Îndepărtați telefonul: întregul model trebuie să fie în interiorul chenarului punctat';
+    else if (d.areaFrac < t.minAreaFrac) msg = 'Apropiați telefonul';
+    else if (t.useTiltSensor && tiltFresh() && state.tilt.deg > t.maxTiltDeg) msg = 'Țineți telefonul mai aproape de orizontală: ' + Math.round(state.tilt.deg) + '° (max. ' + t.maxTiltDeg + '°)';
+    else if (d.sideRatio > t.maxSideRatio) msg = 'Țineți telefonul paralel cu testul';
     else ok = true;
     if (d.found) {
       octxLive.lineWidth = 3; octxLive.strokeStyle = ok ? '#00e676' : '#ffea00';
@@ -301,7 +306,7 @@
       const moved = a.last ? Math.max.apply(null, d.corners.map((p, i) => Math.hypot(p.x - a.last[i].x, p.y - a.last[i].y))) : Infinity;
       a.stable = moved < 0.03 * g.image.width ? a.stable + 1 : 0;
       a.last = d.corners;
-      msg = 'Hold still…';
+      msg = 'Nu mișcați telefonul…';
       if (a.stable >= 3) { stopAuto(); capture({ auto: true }); return; }
     } else { a.stable = 0; a.last = null; }
     $('autoStatus').textContent = msg;
@@ -316,7 +321,7 @@
     const d = D.detectPattern(f.data, f.width, f.height);
     if (!d.found) {
       state.lastReading = null; $('resultSection').classList.add('hidden');
-      state.autoNote = 'Pattern not found automatically. '; redraw(); state.autoNote = '';
+      state.autoNote = 'Modelul nu a fost găsit automat. '; redraw(); state.autoNote = '';
       return;
     }
     const rect = D.rectify(f.data, f.width, f.height, d.corners, 900);
@@ -326,10 +331,10 @@
     const reasons = r.reasons.slice();
     if (cls === 'pass' && (d.aspect < t.aspectMin || d.aspect > t.aspectMax || d.touchesBorder)) {
       cls = 'uncertain';
-      reasons.unshift(d.touchesBorder ? 'pattern touches the edge of the photo: part of it may be missing'
-        : 'detected area has an unexpected shape (' + d.aspect.toFixed(2) + ' : 1): part of the pattern may be missing. Retake or tap the corners');
+      reasons.unshift(d.touchesBorder ? 'modelul atinge marginea fotografiei: este posibil să lipsească o parte din el'
+        : 'zona detectată are o formă neașteptată (' + d.aspect.toFixed(2) + ' : 1): este posibil să lipsească o parte din model. Refaceți fotografia sau atingeți colțurile');
     }
-    reasons.push('region selected automatically');
+    reasons.push('zonă selectată automat');
     state.lastReading = { method: 'sheet', cls: cls, reasons: reasons, sheet: r,
       auto: { corners: d.corners, aspect: d.aspect, sideRatio: d.sideRatio, areaFrac: d.areaFrac, angleDeg: d.angleDeg, map: rect.map, w: rect.width, h: rect.height } };
     showResult();
@@ -364,12 +369,12 @@
         ctx.strokeRect(p.x - size / 2, p.y - size / 2, size, size);
         label(text, p.x + size / 2 + 6, p.y, colour);
       };
-      if (state.roiIndicator) drawBox(state.roiIndicator, '#00e5ff', 'LIQUID');
-      if (state.roiWhite && state.roiWhite !== 'skipped') drawBox(state.roiWhite, '#ffea00', 'WHITE');
+      if (state.roiIndicator) drawBox(state.roiIndicator, '#00e5ff', 'LICHID');
+      if (state.roiWhite && state.roiWhite !== 'skipped') drawBox(state.roiWhite, '#ffea00', 'ALB');
       $('roiSizeVal').textContent = size + ' px';
-      if (!state.roiIndicator) step = 'Tap the LIQUID at the bottom of the vial. Not the cap: the cap is always purple.';
-      else if (!state.roiWhite) step = 'Tap the WHITE area of the label (white reference), or skip.';
-      else step = 'Done. Tap again to move the liquid region, or reset.';
+      if (!state.roiIndicator) step = 'Atingeți LICHIDUL din partea de jos a fiolei. Nu capacul: capacul este întotdeauna violet.';
+      else if (!state.roiWhite) step = 'Atingeți zona ALBĂ a etichetei (referința de alb) sau omiteți acest pas.';
+      else step = 'Gata. Atingeți din nou pentru a muta zona de pe lichid sau resetați selecția.';
       $('btnSkipWhite').disabled = !!state.roiWhite || !state.roiIndicator;
     } else {
       state.corners.forEach((p) => {
@@ -400,11 +405,11 @@
           poly([toFrame(c.box[0] + k, c.box[1] + k), toFrame(c.box[2] - k, c.box[1] + k), toFrame(c.box[2] - k, c.box[3] - k), toFrame(c.box[0] + k, c.box[3] - k)]);
         });
       }
-      const legend = 'Boxes: green = OK, red = pink left, orange = lighter / fainter area, grey = not enough stripes. ';
-      if (au) step = 'Region selected automatically. ' + legend + 'To select by hand instead, tap one corner of the pattern.';
-      else if (state.corners.length === 0) step = (state.autoNote || '') + 'Tap one CORNER of the printed pattern (e.g. top-left).';
-      else if (state.corners.length === 1) step = 'Tap the OPPOSITE corner of the printed pattern.';
-      else step = 'Done. ' + legend + 'Tap to start a new selection.';
+      const legend = 'Casete: verde = în regulă, roșu = a rămas roz, portocaliu = zonă mai deschisă / mai ștearsă, gri = prea puține dungi. ';
+      if (au) step = 'Zonă selectată automat. ' + legend + 'Pentru selectare manuală, atingeți un colț al modelului.';
+      else if (state.corners.length === 0) step = (state.autoNote || '') + 'Atingeți un COLȚ al modelului imprimat (de ex. stânga sus).';
+      else if (state.corners.length === 1) step = 'Atingeți colțul OPUS al modelului imprimat.';
+      else step = 'Gata. ' + legend + 'Atingeți imaginea pentru o nouă selecție.';
     }
     $('stepText').textContent = step;
   }
@@ -453,16 +458,16 @@
     const f = state.frame;
     const size = roiPx();
     const ind = C.regionStats(f.data, f.width, f.height, state.roiIndicator.x, state.roiIndicator.y, size);
-    if (!ind.lin) { showError('Region is fully saturated (glare). Move the region or reduce light.'); return; }
+    if (!ind.lin) { showError('Zona este complet saturată (reflexii). Mutați zona sau reduceți lumina.'); return; }
     const rawLab = C.linRgbToLab(ind.lin);
     let white = null, corrLin = null, corrLab = null, whiteWarn = '';
     if (state.roiWhite && state.roiWhite !== 'skipped') {
       white = C.regionStats(f.data, f.width, f.height, state.roiWhite.x, state.roiWhite.y, size);
-      if (!white.lin) whiteWarn = 'White reference fully clipped: not used.';
+      if (!white.lin) whiteWarn = 'Referința de alb este complet saturată: nu a fost folosită.';
       else {
-        if (white.clippedFrac > 0.2) whiteWarn = 'White reference partly clipped (' + Math.round(white.clippedFrac * 100) + '%): correction less reliable.';
+        if (white.clippedFrac > 0.2) whiteWarn = 'Referința de alb este parțial saturată (' + Math.round(white.clippedFrac * 100) + '%): corecția este mai puțin sigură.';
         const wl = C.labToLch(C.linRgbToLab(white.lin));
-        if (wl.C > 25) whiteWarn += (whiteWarn ? ' ' : '') + 'White reference looks coloured (chroma ' + wl.C.toFixed(0) + '): did you tap the white label?';
+        if (wl.C > 25) whiteWarn += (whiteWarn ? ' ' : '') + 'Referința de alb pare colorată (saturație ' + wl.C.toFixed(0) + '): ați atins partea albă a etichetei?';
         corrLin = C.applyWhiteReference(ind.lin, white.lin, 0.85);
         corrLab = C.linRgbToLab(corrLin);
       }
@@ -473,8 +478,8 @@
     const res = C.classify(labUsed, ind, refs, thr());
     const reasons = res.reasons.slice();
     if (whiteWarn) reasons.push(whiteWarn);
-    if (!corrected) reasons.push('no white reference: raw camera colours used');
-    if (!refs.purple || !refs.yellow) reasons.push('not fully calibrated for this mode (' + (corrected ? 'with' : 'without') + ' white reference)');
+    if (!corrected) reasons.push('fără referință de alb: s-au folosit culorile brute ale camerei');
+    if (!refs.purple || !refs.yellow) reasons.push('calibrare incompletă pentru acest mod (' + (corrected ? 'cu' : 'fără') + ' referință de alb)');
 
     state.lastReading = {
       method: 'vial', cls: VIAL_CLASS[res.cls], reasons: reasons,
@@ -521,30 +526,30 @@
       const v = r.vial;
       const lab = (l) => (l ? fmt(l.L) + ' / ' + fmt(l.a) + ' / ' + fmt(l.b) : '—');
       rows = [
-        ['Liquid, raw RGB', swatch(v.ind.srgb) + v.ind.srgb.map((x) => fmt(x, 0)).join(', ')],
-        ['Liquid, raw Lab', lab(v.rawLab)],
-        ['White ref RGB', v.white && v.white.srgb ? swatch(v.white.srgb) + v.white.srgb.map((x) => fmt(x, 0)).join(', ') : 'not used'],
-        ['Corrected Lab', v.corrLab ? swatch(v.corrLin.map(C.linearToSrgb)) + lab(v.corrLab) : '—'],
-        ['Chroma / hue (used)', fmt(v.res.lch.C) + ' / ' + fmt(v.res.lch.h, 0) + '°'],
-        ['ΔE2000 to purple ref', v.res.dePurple === null ? 'no reference' : fmt(v.res.dePurple)],
-        ['ΔE2000 to yellow ref', v.res.deYellow === null ? 'no reference' : fmt(v.res.deYellow)],
-        ['Region uniformity (σL*) / clipped', fmt(v.ind.spreadL) + ' / ' + Math.round(v.ind.clippedFrac * 100) + '%'],
-        ['Region', v.roiSize + ' px, ' + v.ind.n + ' pixels used'],
+        ['Lichid, RGB brut', swatch(v.ind.srgb) + v.ind.srgb.map((x) => fmt(x, 0)).join(', ')],
+        ['Lichid, Lab brut', lab(v.rawLab)],
+        ['Referință de alb, RGB', v.white && v.white.srgb ? swatch(v.white.srgb) + v.white.srgb.map((x) => fmt(x, 0)).join(', ') : 'nefolosită'],
+        ['Lab corectat', v.corrLab ? swatch(v.corrLin.map(C.linearToSrgb)) + lab(v.corrLab) : '—'],
+        ['Saturație / nuanță (valorile folosite)', fmt(v.res.lch.C) + ' / ' + fmt(v.res.lch.h, 0) + '°'],
+        ['ΔE2000 față de referința violet', v.res.dePurple === null ? 'fără referință' : fmt(v.res.dePurple)],
+        ['ΔE2000 față de referința galbenă', v.res.deYellow === null ? 'fără referință' : fmt(v.res.deYellow)],
+        ['Uniformitatea zonei (σL*) / pixeli saturați', fmt(v.ind.spreadL) + ' / ' + Math.round(v.ind.clippedFrac * 100) + '%'],
+        ['Zonă', v.roiSize + ' px, ' + v.ind.n + ' pixeli folosiți'],
       ];
     } else {
       const m = r.sheet.metrics;
       rows = [
-        ['Paper (white) RGB', swatch(m.paperLin.map(C.linearToSrgb)) + m.paperLin.map((x) => fmt(C.linearToSrgb(x), 0)).join(', ')],
-        ['Stripe pixels', pct(m.inkFrac) + ' of the area'],
-        ['Pink share of stripes (whole / worst area)', pct(m.pinkFrac) + ' / ' + pct(m.maxCellPink)],
-        ['Stripe darkness, median L* (0 = black)', fmt(m.medianInkL)],
-        ['Darkest / lightest area L*', fmt(m.bestCellL) + ' / ' + fmt(m.worstCellL)],
-        ['Darkness difference between areas (ΔL*)', fmt(m.spreadL)],
-        ['Weakest stripe density vs typical', pct(m.minInkRatio)],
-        ['Glare', pct(m.clippedFrac)],
-        ['Areas analysed', m.cellsUsed + ' of ' + m.cellsTotal + ' (sampling every ' + m.step + ' px)'],
-        ['Region', r.auto ? 'automatic · shape ' + fmt(r.auto.aspect, 2) + ' : 1 · rotation ' + fmt(r.auto.angleDeg, 0) + '° · perspective ' + fmt(r.auto.sideRatio, 2) : 'manual (two corners)'],
-        ['Capture', (state.captureMeta.autoCapture ? 'automatic' : 'manual') + (state.captureMeta.tiltDeg === null ? ' · no tilt sensor reading' : ' · phone tilt ' + fmt(state.captureMeta.tiltDeg, 0) + '°')],
+        ['Hârtie (alb), RGB', swatch(m.paperLin.map(C.linearToSrgb)) + m.paperLin.map((x) => fmt(C.linearToSrgb(x), 0)).join(', ')],
+        ['Pixeli de dungă', pct(m.inkFrac) + ' din zonă'],
+        ['Proporția de roz din dungi (total / zona cea mai afectată)', pct(m.pinkFrac) + ' / ' + pct(m.maxCellPink)],
+        ['Cât de închise sunt dungile, L* median (0 = negru)', fmt(m.medianInkL)],
+        ['L* în zona cea mai închisă / cea mai deschisă', fmt(m.bestCellL) + ' / ' + fmt(m.worstCellL)],
+        ['Diferența dintre zone (ΔL*)', fmt(m.spreadL)],
+        ['Cea mai mică densitate a dungilor față de cea tipică', pct(m.minInkRatio)],
+        ['Reflexii', pct(m.clippedFrac)],
+        ['Zone analizate', m.cellsUsed + ' din ' + m.cellsTotal + ' (eșantionare la fiecare ' + m.step + ' px)'],
+        ['Zonă', r.auto ? 'automată · formă ' + fmt(r.auto.aspect, 2) + ' : 1 · rotație ' + fmt(r.auto.angleDeg, 0) + '° · perspectivă ' + fmt(r.auto.sideRatio, 2) : 'manuală (două colțuri)'],
+        ['Fotografiere', (state.captureMeta.autoCapture ? 'automată' : 'manuală') + (state.captureMeta.tiltDeg === null ? ' · fără date de la senzorul de înclinare' : ' · înclinarea telefonului: ' + fmt(state.captureMeta.tiltDeg, 0) + '°')],
       ];
     }
     $('resultTable').innerHTML = rows.map((x) => '<tr><th>' + x[0] + '</th><td>' + x[1] + '</td></tr>').join('');
@@ -571,8 +576,8 @@
   function saveLog() {
     const r = state.lastReading;
     if (!r) return;
-    if (!$('expected').value) { $('saveStatus').innerHTML = '<span class="warn">Select the expected result first.</span>'; return; }
-    if (!$('lighting').value) { $('saveStatus').innerHTML = '<span class="warn">Select the lighting first.</span>'; return; }
+    if (!$('expected').value) { $('saveStatus').innerHTML = '<span class="warn">Selectați mai întâi rezultatul așteptat.</span>'; return; }
+    if (!$('lighting').value) { $('saveStatus').innerHTML = '<span class="warn">Selectați mai întâi iluminarea.</span>'; return; }
     const s = state.captureMeta.settings || {};
     const expected = $('expected').value;
     const predicted = r.cls;
@@ -610,8 +615,8 @@
     );
     state.log.push(entry);
     const ok = store.set(K.log, state.log);
-    $('saveStatus').innerHTML = ok ? 'Saved (#' + state.log.length + ').' : '<span class="warn">Saved for this page only: browser storage unavailable. Export before closing.</span>';
-    if (entry.unsafeError) $('saveStatus').innerHTML += ' <span class="warn">UNSAFE ERROR: a failed sample was read as passed. Stop signal per test plan.</span>';
+    $('saveStatus').innerHTML = ok ? 'Salvat (nr. ' + state.log.length + ').' : '<span class="warn">Salvat doar cât timp pagina rămâne deschisă: stocarea în browser nu este disponibilă. Exportați înainte de a închide pagina.</span>';
+    if (entry.unsafeError) $('saveStatus').innerHTML += ' <span class="warn">EROARE NESIGURĂ: o probă eșuată a fost citită ca trecută. Semnal de oprire, conform planului de test.</span>';
     renderLog();
   }
 
@@ -664,16 +669,16 @@
     const correct = judged.filter((e) => e.match === true).length;
     const unsafe = L.filter((e) => e.unsafeError).length;
     const unc = L.filter((e) => e.predicted === 'uncertain').length;
-    $('logSummary').innerHTML = L.length + ' captures · ' + correct + '/' + judged.length + ' match expected · ' +
-      unc + ' uncertain · ' + (unsafe ? '<span class="warn">' + unsafe + ' UNSAFE</span>' : '0 unsafe');
+    $('logSummary').innerHTML = L.length + ' citiri · ' + correct + '/' + judged.length + ' corespund rezultatului așteptat · ' +
+      unc + ' incerte · ' + (unsafe ? '<span class="warn">' + unsafe + ' NESIGURE</span>' : '0 nesigure');
     const last = L.slice(-10).reverse();
     $('logTable').innerHTML = last.length
-      ? '<tr><th>#</th><th>Time</th><th>Object</th><th>Sample</th><th>Lighting</th><th>Expected</th><th>Predicted</th></tr>' +
+      ? '<tr><th>Nr.</th><th>Ora</th><th>Obiect</th><th>Probă</th><th>Iluminare</th><th>Așteptat</th><th>Citit</th></tr>' +
         last.map((e, i) => '<tr><td>' + (L.length - i) + '</td><td>' + escapeHtml(e.timestamp.slice(11, 19)) + '</td><td>' +
-          escapeHtml(e.product || 'bi-vial') + '</td><td>' + escapeHtml(e.sampleId) + '</td><td>' + escapeHtml(e.lighting) + '</td><td>' +
-          escapeHtml(e.expected) + '</td><td>' + (e.unsafeError ? '<span class="warn">' : '') + escapeHtml(e.predicted) +
+          escapeHtml(e.product || 'bi-vial') + '</td><td>' + escapeHtml(e.sampleId) + '</td><td>' + escapeHtml(optionText('lighting', e.lighting)) + '</td><td>' +
+          escapeHtml(CLS_RO[e.expected] || e.expected) + '</td><td>' + (e.unsafeError ? '<span class="warn">' : '') + escapeHtml(CLS_RO[e.predicted] || e.predicted) +
           (e.unsafeError ? '</span>' : '') + '</td></tr>').join('')
-      : '<tr><td class="muted">No captures yet.</td></tr>';
+      : '<tr><td class="muted">Nicio citire salvată.</td></tr>';
   }
 
   function toCsv(rows) {
@@ -707,7 +712,7 @@
     if (btn.dataset.armed) {
       delete btn.dataset.armed; btn.textContent = label; action();
     } else {
-      btn.dataset.armed = '1'; btn.textContent = 'Tap again to confirm';
+      btn.dataset.armed = '1'; btn.textContent = 'Atingeți din nou pentru confirmare';
       setTimeout(() => { if (btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = label; } }, 4000);
     }
   }
@@ -721,20 +726,20 @@
     const l = r.vial.labUsed;
     state.refs[kind].push({ L: l.L, a: l.a, b: l.b, corrected: r.vial.corrected, timestamp: nowIso(), lighting: $('lighting').value, sampleId: $('sampleId').value.trim() });
     store.set(K.refs, state.refs);
-    $('saveStatus').textContent = 'Saved as ' + kind + ' reference (' + (r.vial.corrected ? 'with' : 'without') + ' white reference).';
+    $('saveStatus').textContent = 'Salvat ca referință ' + REF_RO[kind] + ' (' + (r.vial.corrected ? 'cu' : 'fără') + ' referință de alb).';
     renderRefs();
   }
 
   function renderRefs() {
     const row = (kind, corrected) => {
       const xs = state.refs[kind].filter((r) => !!r.corrected === corrected);
-      if (!xs.length) return '<tr><td>' + kind + '</td><td>' + (corrected ? 'with' : 'without') + '</td><td>0</td><td>—</td><td>—</td></tr>';
+      if (!xs.length) return '<tr><td>' + REF_RO[kind] + '</td><td>' + (corrected ? 'cu' : 'fără') + '</td><td>0</td><td>—</td><td>—</td></tr>';
       const m = refMeans(corrected)[kind];
       const spread = Math.max.apply(null, xs.map((x) => C.deltaE2000(x, m)));
-      return '<tr><td>' + kind + '</td><td>' + (corrected ? 'with' : 'without') + '</td><td>' + xs.length + '</td><td>' + swatch(labToApproxRgb(m)) +
+      return '<tr><td>' + REF_RO[kind] + '</td><td>' + (corrected ? 'cu' : 'fără') + '</td><td>' + xs.length + '</td><td>' + swatch(labToApproxRgb(m)) +
         fmt(m.L) + ' / ' + fmt(m.a) + ' / ' + fmt(m.b) + '</td><td>' + fmt(spread) + '</td></tr>';
     };
-    $('refTable').innerHTML = '<tr><th>Reference</th><th>White ref</th><th>Samples</th><th>Mean Lab</th><th>Max ΔE from mean</th></tr>' +
+    $('refTable').innerHTML = '<tr><th>Referință</th><th>Referință de alb</th><th>Citiri</th><th>Lab mediu</th><th>ΔE maxim față de medie</th></tr>' +
       row('purple', true) + row('yellow', true) + row('purple', false) + row('yellow', false);
   }
 
@@ -754,22 +759,22 @@
   // ======================================================================
   const THR_LABELS = {
     // vial
-    minChroma: 'Min chroma (greyer = uncertain)', minL: 'Min L* (darker = uncertain)', maxL: 'Max L* (brighter = uncertain)',
-    purpleHueMin: 'Purple hue from (°)', purpleHueMax: 'Purple hue to (°)',
-    growthHueMin: 'Yellow/green hue from (°)', growthHueMax: 'Yellow/green hue to (°)',
-    maxSpreadL: 'Max σL* in region', maxClippedFrac: 'Max glare share (0–1)',
-    maxDePurple: 'Calibrated: max ΔE to purple', marginDe: 'Calibrated: min margin purple vs yellow', maxDeYellow: 'Calibrated: max ΔE to yellow',
+    minChroma: 'Saturație minimă (mai cenușiu = incert)', minL: 'L* minim (mai întunecat = incert)', maxL: 'L* maxim (mai luminos = incert)',
+    purpleHueMin: 'Nuanță violet de la (°)', purpleHueMax: 'Nuanță violet până la (°)',
+    growthHueMin: 'Nuanță galben/verde de la (°)', growthHueMax: 'Nuanță galben/verde până la (°)',
+    maxSpreadL: 'σL* maxim în zonă', maxClippedFrac: 'Proporție maximă de reflexii (0–1)',
+    maxDePurple: 'Calibrat: ΔE maxim față de violet', marginDe: 'Calibrat: diferență minimă violet față de galben', maxDeYellow: 'Calibrat: ΔE maxim față de galben',
     // sheet
-    insetFrac: 'Ignore edge share (0–0.2)', grid: 'Grid (N × N areas)', inkDeltaL: 'Stripe = L* below paper by',
-    minInkFrac: 'Min stripe share of area', minInkPerCell: 'Min stripe pixels per area',
-    pinkChroma: 'Pink: min chroma', pinkHueMin: 'Pink hue from (°)', pinkHueMax: 'Pink hue to (°)',
-    passPinkFrac: 'Pass: max pink share (whole)', passCellPinkFrac: 'Pass: max pink share (any area)',
-    passInkL: 'Pass: max median stripe L*', passWorstCellL: 'Pass: max L* of lightest area', passInkRatio: 'Pass: min stripe density ratio',
-    failPinkFrac: 'Fail: pink share (whole) from', failCellPinkFrac: 'Fail: pink share (any area) from',
-    maxTiltDeg: 'Auto-capture: max tilt (°)', useTiltSensor: 'Auto-capture: use motion sensor (1/0)',
-    maxSideRatio: 'Auto-capture: max opposite-side ratio', minAreaFrac: 'Auto-capture: min share of frame',
-    aspectMin: 'Auto region: min width/height', aspectMax: 'Auto region: max width/height',
-    failInkL: 'Fail: stripe L* from', failSpreadL: 'Fail: ΔL* between areas from (if lightest area not black)', failInkRatio: 'Fail: stripe density ratio below',
+    insetFrac: 'Margine ignorată (0–0.2)', grid: 'Grilă (N × N zone)', inkDeltaL: 'Dungă = L* sub cel al hârtiei cu cel puțin',
+    minInkFrac: 'Proporție minimă de dungi în zonă', minInkPerCell: 'Număr minim de pixeli de dungă pe zonă',
+    pinkChroma: 'Roz: saturație minimă', pinkHueMin: 'Nuanță roz de la (°)', pinkHueMax: 'Nuanță roz până la (°)',
+    passPinkFrac: 'Trecut: proporție maximă de roz (total)', passCellPinkFrac: 'Trecut: proporție maximă de roz (orice zonă)',
+    passInkL: 'Trecut: L* median maxim al dungilor', passWorstCellL: 'Trecut: L* maxim în zona cea mai deschisă', passInkRatio: 'Trecut: raport minim al densității dungilor',
+    failPinkFrac: 'Eșuat: proporție de roz (total) de la', failCellPinkFrac: 'Eșuat: proporție de roz (orice zonă) de la',
+    maxTiltDeg: 'Fotografiere automată: înclinare maximă (°)', useTiltSensor: 'Fotografiere automată: folosește senzorul de mișcare (1/0)',
+    maxSideRatio: 'Fotografiere automată: raport maxim între laturile opuse', minAreaFrac: 'Fotografiere automată: proporție minimă din cadru',
+    aspectMin: 'Zonă automată: raport minim lățime/înălțime', aspectMax: 'Zonă automată: raport maxim lățime/înălțime',
+    failInkL: 'Eșuat: L* al dungilor de la', failSpreadL: 'Eșuat: ΔL* între zone de la (dacă zona cea mai deschisă nu este neagră)', failInkRatio: 'Eșuat: raportul densității dungilor sub',
   };
   function renderThresholds() {
     const t = thr();
@@ -836,24 +841,24 @@
 
   function renderCapSummary(rep) {
     const caps = (rep.track && rep.track.capabilities) || {};
-    const yn = (b) => (b ? 'yes' : 'no');
-    const modes = (k) => (Array.isArray(caps[k]) ? caps[k].join(', ') : 'not exposed');
-    const range = (k) => (caps[k] && typeof caps[k] === 'object' && 'min' in caps[k] ? caps[k].min + '–' + caps[k].max : 'not exposed');
+    const yn = (b) => (b ? 'da' : 'nu');
+    const modes = (k) => (Array.isArray(caps[k]) ? caps[k].join(', ') : 'indisponibil');
+    const range = (k) => (caps[k] && typeof caps[k] === 'object' && 'min' in caps[k] ? caps[k].min + '–' + caps[k].max : 'indisponibil');
     const rows = [
-      ['Secure context (HTTPS)', yn(rep.secureContext)],
-      ['getUserMedia', yn(rep.getUserMedia)],
-      ['Camera running', rep.track ? 'yes: ' + escapeHtml(rep.track.label || '') : 'no (start the camera)'],
-      ['Exposure mode', modes('exposureMode')],
-      ['Exposure time range', range('exposureTime')],
-      ['ISO range', range('iso')],
-      ['White balance mode', modes('whiteBalanceMode')],
-      ['Colour temperature range', range('colorTemperature')],
-      ['Focus mode', modes('focusMode')],
-      ['Focus distance range', range('focusDistance')],
-      ['Torch', 'torch' in caps ? 'yes' : 'not exposed'],
-      ['ImageCapture API', yn(rep.imageCaptureApi)],
-      ['Tilt (motion) sensor', rep.tiltSensorSeen ? 'yes, readings received' : rep.deviceOrientationApi ? 'API present, no reading yet (run one auto-capture)' : 'no'],
-      ['BarcodeDetector', rep.barcodeDetectorApi ? 'yes: ' + escapeHtml((rep.barcodeFormats || []).join(', ') || 'no formats') : 'no'],
+      ['Conexiune securizată (HTTPS)', yn(rep.secureContext)],
+      ['Acces la cameră (getUserMedia)', yn(rep.getUserMedia)],
+      ['Cameră pornită', rep.track ? 'da: ' + escapeHtml(rep.track.label || '') : 'nu (porniți camera)'],
+      ['Mod de expunere', modes('exposureMode')],
+      ['Interval pentru timpul de expunere', range('exposureTime')],
+      ['Interval ISO', range('iso')],
+      ['Mod pentru balansul de alb', modes('whiteBalanceMode')],
+      ['Interval pentru temperatura de culoare', range('colorTemperature')],
+      ['Mod de focalizare', modes('focusMode')],
+      ['Interval pentru distanța de focalizare', range('focusDistance')],
+      ['Lanternă', 'torch' in caps ? 'da' : 'indisponibilă'],
+      ['API ImageCapture', yn(rep.imageCaptureApi)],
+      ['Senzor de înclinare (mișcare)', rep.tiltSensorSeen ? 'da, s-au primit date' : rep.deviceOrientationApi ? 'API disponibil, încă nu s-au primit date (faceți o fotografiere automată)' : 'nu'],
+      ['Cititor de coduri (BarcodeDetector)', rep.barcodeDetectorApi ? 'da: ' + escapeHtml((rep.barcodeFormats || []).join(', ') || 'niciun format') : 'nu'],
       ['QR / DataMatrix', rep.barcodeFormats ? yn(rep.barcodeFormats.indexOf('qr_code') !== -1) + ' / ' + yn(rep.barcodeFormats.indexOf('data_matrix') !== -1) : '—'],
     ];
     $('capSummary').innerHTML = rows.map((r) => '<tr><th>' + r[0] + '</th><td>' + r[1] + '</td></tr>').join('');
@@ -896,14 +901,14 @@
   $('btnSaveLog').addEventListener('click', saveLog);
   $('btnRefPurple').addEventListener('click', () => saveRef('purple'));
   $('btnRefYellow').addEventListener('click', () => saveRef('yellow'));
-  $('btnClearRefs').addEventListener('click', (e) => armButton(e.target, 'Clear references', () => {
+  $('btnClearRefs').addEventListener('click', (e) => armButton(e.target, 'Șterge referințele', () => {
     state.refs = { purple: [], yellow: [] }; store.set(K.refs, state.refs); renderRefs(); if (state.lastReading) measure();
   }));
   $('btnExportCsv').addEventListener('click', () => download(fileStem() + '.csv', toCsv(state.log), 'text/csv;charset=utf-8'));
   $('btnExportJson').addEventListener('click', () => download(fileStem() + '.json', JSON.stringify({
     exported: nowIso(), build: BUILD, capabilityReport: state.capReport, thresholds: state.thresholds, references: state.refs, log: state.log,
   }, null, 2), 'application/json'));
-  $('btnClearLog').addEventListener('click', (e) => armButton(e.target, 'Clear log', () => { state.log = []; store.set(K.log, state.log); renderLog(); }));
+  $('btnClearLog').addEventListener('click', (e) => armButton(e.target, 'Șterge jurnalul', () => { state.log = []; store.set(K.log, state.log); renderLog(); }));
   $('thresholdGrid').addEventListener('change', onThresholdChange);
   $('btnResetThresholds').addEventListener('click', () => {
     state.thresholds[state.product.id] = Object.assign({}, DEFAULTS_BY_METHOD[state.product.method]);
@@ -911,9 +916,9 @@
   });
   $('btnCapRefresh').addEventListener('click', refreshCapabilities);
   $('btnCapCopy').addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(JSON.stringify(state.capReport, null, 2)); $('btnCapCopy').textContent = 'Copied'; }
-    catch (e) { $('btnCapCopy').textContent = 'Copy failed: use Export'; }
-    setTimeout(() => ($('btnCapCopy').textContent = 'Copy'), 2500);
+    try { await navigator.clipboard.writeText(JSON.stringify(state.capReport, null, 2)); $('btnCapCopy').textContent = 'Copiat'; }
+    catch (e) { $('btnCapCopy').textContent = 'Copierea nu a reușit: folosiți exportul'; }
+    setTimeout(() => ($('btnCapCopy').textContent = 'Copiază'), 2500);
   });
   $('btnCapExport').addEventListener('click', () => download(fileStem() + '_capabilities.json', JSON.stringify(state.capReport, null, 2), 'application/json'));
   ['deviceLabel', 'sessionCode', 'lighting', 'angle'].forEach((id) => $(id).addEventListener('change', saveSession));

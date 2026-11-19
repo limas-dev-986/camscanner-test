@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ro">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
-<title>Indicator colour test</title>
+<title>Test de citire a culorii indicatorilor</title>
 <link rel="icon" href="data:,">
 <style>
   :root { --fg:#1b1b1f; --muted:#5d5d66; --line:#d9d9de; --bg:#f6f6f8; --card:#fff;
@@ -56,24 +56,24 @@
 </style>
 </head>
 <body>
-<div class="banner">Test tool only. Not for sterilisation decisions.</div>
+<div class="banner">Doar instrument de test. Nu se utilizează pentru decizii privind sterilizarea.</div>
 <main>
-  <h1>Indicator colour test</h1>
-  <p class="muted">Feasibility test. Everything runs on this phone: no uploads, no tracking. Results stay on the device until you export them.</p>
+  <h1>Test de citire a culorii indicatorilor</h1>
+  <p class="muted">Test de fezabilitate. Totul rulează pe acest telefon: nu se încarcă date nicăieri și nu există urmărire. Rezultatele rămân pe dispozitiv până când le exportați.</p>
 
   <!-- 0. Object -->
   <section>
-    <h2>Object to test</h2>
-    <select id="selProduct" aria-label="Object to test" style="width:100%"></select>
+    <h2>Obiectul testat</h2>
+    <select id="selProduct" aria-label="Obiectul testat" style="width:100%"></select>
     <p id="productHint" class="muted"></p>
   </section>
 
   <!-- 1. Camera -->
   <section id="camSection">
-    <h2>1. Camera</h2>
+    <h2>1. Cameră</h2>
     <div class="row">
-      <button id="btnStart">Start camera</button>
-      <select id="selCamera" class="hidden" aria-label="Camera"></select>
+      <button id="btnStart">Pornește camera</button>
+      <select id="selCamera" class="hidden" aria-label="Cameră"></select>
     </div>
     <div id="camWrap" class="camwrap hidden">
       <video id="video" playsinline muted autoplay></video>
@@ -82,13 +82,13 @@
       <div id="autoStatus" class="autostatus hidden"></div>
     </div>
     <div id="camControls" class="hidden">
-      <button id="btnCapture" class="capture">Capture</button>
+      <button id="btnCapture" class="capture">Fotografiază</button>
       <div class="locks">
-        <label id="autoLabel"><input type="checkbox" id="autoCapture" checked> Auto</label>
-        <label><input type="checkbox" id="lockExposure"> Exposure</label>
-        <label><input type="checkbox" id="lockWB"> White bal.</label>
-        <label><input type="checkbox" id="lockFocus"> Focus</label>
-        <label><input type="checkbox" id="torch"> Torch</label>
+        <label id="autoLabel"><input type="checkbox" id="autoCapture" checked> Automat</label>
+        <label><input type="checkbox" id="lockExposure"> Expunere</label>
+        <label><input type="checkbox" id="lockWB"> Balans alb</label>
+        <label><input type="checkbox" id="lockFocus"> Focalizare</label>
+        <label><input type="checkbox" id="torch"> Lanternă</label>
       </div>
       <p id="lockStatus" class="muted small"></p>
     </div>
@@ -97,135 +97,135 @@
 
   <!-- 2. Regions -->
   <section id="roiSection" class="hidden">
-    <h2>2. Select regions</h2>
+    <h2>2. Selectarea zonei</h2>
     <div id="stepText" class="step"></div>
     <canvas id="frame" class="frame"></canvas>
     <div class="row" id="roiSizeRow">
-      <label>Region size <input type="range" id="roiSize" min="1" max="12" step="0.5" value="4"> <span id="roiSizeVal"></span></label>
+      <label>Dimensiunea zonei <input type="range" id="roiSize" min="1" max="12" step="0.5" value="4"> <span id="roiSizeVal"></span></label>
     </div>
     <div class="row">
-      <button id="btnSkipWhite" class="secondary">Skip white reference</button>
-      <button id="btnAutoRoi" class="secondary">Auto-select region</button>
-      <button id="btnResetRoi" class="secondary">Reset regions</button>
-      <button id="btnRetake" class="secondary">Retake</button>
+      <button id="btnSkipWhite" class="secondary">Omite referința de alb</button>
+      <button id="btnAutoRoi" class="secondary">Selectează zona automat</button>
+      <button id="btnResetRoi" class="secondary">Resetează selecția</button>
+      <button id="btnRetake" class="secondary">Refă fotografia</button>
     </div>
   </section>
 
   <!-- 3. Result -->
   <section id="resultSection" class="hidden">
-    <h2>3. Result</h2>
+    <h2>3. Rezultat</h2>
     <div id="resultBox" class="result"></div>
     <p id="resultReasons" class="muted"></p>
     <div class="scroll"><table id="resultTable"></table></div>
 
-    <h2 style="margin-top:14px">Tester input</h2>
+    <h2 style="margin-top:14px">Date introduse de tester</h2>
     <div class="grid">
-      <label>Expected result
+      <label>Rezultat așteptat
         <select id="expected">
-          <option value="">— select —</option>
+          <option value="">— selectați —</option>
 
         </select>
       </label>
-      <label>Lighting
+      <label>Iluminare
         <select id="lighting">
-          <option value="">— select —</option>
-          <option>Cool fluorescent (CSSD)</option>
-          <option>Warm / LED</option>
-          <option>Daylight near window</option>
-          <option>Dim</option>
-          <option>Phone torch only</option>
-          <option>Other</option>
+          <option value="">— selectați —</option>
+          <option value="Cool fluorescent (CSSD)">Fluorescentă rece (stația de sterilizare)</option>
+          <option value="Warm / LED">Caldă / LED</option>
+          <option value="Daylight near window">Lumină naturală, lângă fereastră</option>
+          <option value="Dim">Lumină slabă</option>
+          <option value="Phone torch only">Doar lanterna telefonului</option>
+          <option value="Other">Altă iluminare</option>
         </select>
       </label>
-      <label>Angle / distance
+      <label>Unghi / distanță
         <select id="angle">
-          <option>Recommended position</option>
-          <option>Tilted ~20°</option>
-          <option>Other</option>
+          <option value="Recommended position">Poziția recomandată</option>
+          <option value="Tilted ~20°">Înclinat cu aproximativ 20°</option>
+          <option value="Other">Altă poziție</option>
         </select>
       </label>
-      <label>Sample ID (e.g. P1, Y2)
+      <label>Codul probei (de ex. P1, N2)
         <input type="text" id="sampleId" maxlength="20" autocomplete="off">
       </label>
     </div>
     <div class="grid" style="margin-top:8px">
-      <label>Note (no names or patient data)
+      <label>Observații (fără nume sau date despre pacienți)
         <input type="text" id="note" maxlength="120" autocomplete="off">
       </label>
     </div>
     <div class="row">
-      <button id="btnSaveLog">Save to log</button>
+      <button id="btnSaveLog">Salvează în jurnal</button>
       <span id="saveStatus" class="muted"></span>
     </div>
     <details id="calibBox">
-      <summary>Calibration: save this reading as a reference</summary>
-      <p class="muted">Use only samples whose state you know. Save several of each, ideally under the lighting you test in.</p>
+      <summary>Calibrare: salvați această citire ca referință</summary>
+      <p class="muted">Folosiți doar probe a căror stare o cunoașteți. Salvați mai multe citiri pentru fiecare stare, de preferat în lumina în care testați.</p>
       <div class="row">
-        <button id="btnRefPurple" class="secondary">Save as PURPLE reference</button>
-        <button id="btnRefYellow" class="secondary">Save as YELLOW reference</button>
+        <button id="btnRefPurple" class="secondary">Salvează ca referință VIOLET</button>
+        <button id="btnRefYellow" class="secondary">Salvează ca referință GALBEN</button>
       </div>
     </details>
   </section>
 
   <!-- 4. Session setup -->
   <section>
-    <h2>4. Session</h2>
+    <h2>4. Sesiune</h2>
     <div class="grid">
-      <label>Device label (e.g. "Phone A – budget Android")
+      <label>Eticheta dispozitivului (de ex. „Telefon A – Android buget”)
         <input type="text" id="deviceLabel" maxlength="60" autocomplete="off">
       </label>
-      <label>Tester initials / session code
+      <label>Inițialele testerului / codul sesiunii
         <input type="text" id="sessionCode" maxlength="20" autocomplete="off">
       </label>
     </div>
-    <p class="muted">Do not type full names. The device label is how results from different phones are compared.</p>
+    <p class="muted">Nu introduceți nume complete. Pe baza etichetei dispozitivului se compară rezultatele obținute cu telefoane diferite.</p>
   </section>
 
   <!-- 5. Calibration status -->
   <section id="refSection">
-    <h2>5. Calibration references</h2>
+    <h2>5. Referințe de calibrare</h2>
     <div class="scroll"><table id="refTable"></table></div>
     <div class="row">
-      <button id="btnClearRefs" class="danger">Clear references</button>
+      <button id="btnClearRefs" class="danger">Șterge referințele</button>
     </div>
   </section>
 
   <!-- 6. Log -->
   <section>
-    <h2>6. Test log</h2>
+    <h2>6. Jurnalul testelor</h2>
     <p id="logSummary" class="muted"></p>
     <div class="scroll"><table id="logTable"></table></div>
     <div class="row">
-      <button id="btnExportCsv">Export CSV</button>
-      <button id="btnExportJson">Export JSON</button>
-      <button id="btnClearLog" class="danger">Clear log</button>
+      <button id="btnExportCsv">Exportă CSV</button>
+      <button id="btnExportJson">Exportă JSON</button>
+      <button id="btnClearLog" class="danger">Șterge jurnalul</button>
     </div>
   </section>
 
   <!-- 7. Settings -->
   <section>
     <details>
-      <summary>7. Classification thresholds</summary>
-      <p class="muted">Starting values. Change them only between sessions, and note the change in the results template. Saved on this device.</p>
+      <summary>7. Praguri de clasificare</summary>
+      <p class="muted">Valori de pornire. Modificați-le doar între sesiuni și notați modificarea în fișa de rezultate. Se salvează pe acest dispozitiv.</p>
       <div id="thresholdGrid" class="grid"></div>
-      <div class="row"><button id="btnResetThresholds" class="secondary">Reset to defaults</button></div>
+      <div class="row"><button id="btnResetThresholds" class="secondary">Revino la valorile implicite</button></div>
     </details>
   </section>
 
   <!-- 8. Capability report -->
   <section>
-    <h2>8. Capability report</h2>
-    <p class="muted">What this phone and browser expose. Start the camera first for the full report.</p>
+    <h2>8. Raport de capabilități</h2>
+    <p class="muted">Ce funcții ale camerei pun la dispoziție acest telefon și acest browser. Pentru raportul complet, porniți mai întâi camera.</p>
     <div class="row">
-      <button id="btnCapRefresh" class="secondary">Refresh</button>
-      <button id="btnCapCopy" class="secondary">Copy</button>
-      <button id="btnCapExport" class="secondary">Export JSON</button>
+      <button id="btnCapRefresh" class="secondary">Actualizează</button>
+      <button id="btnCapCopy" class="secondary">Copiază</button>
+      <button id="btnCapExport" class="secondary">Exportă JSON</button>
     </div>
     <div class="scroll"><table id="capSummary"></table></div>
-    <details><summary>Full report</summary><pre id="capReport"></pre></details>
+    <details><summary>Raport complet</summary><pre id="capReport"></pre></details>
   </section>
 
-  <p class="muted">Build <span id="buildId"></span></p>
+  <p class="muted">Versiune <span id="buildId"></span></p>
 </main>
 <script src="colour.js"></script>
 <script src="detect.js"></script>
