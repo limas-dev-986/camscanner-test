@@ -276,6 +276,13 @@
     passInkRatio: 0.6,      // pass: every cell has at least this share of the typical stripe density
     failInkRatio: 0.35,     // fail: a cell with less stripe density than this = faint / unchanged area
     maxClippedFrac: 0.15,   // glare
+    // automatic capture / automatic region
+    maxTiltDeg: 20,         // auto-capture: max phone tilt from flat (motion sensor; sheet lying on a table)
+    useTiltSensor: 1,       // 1 = use the motion sensor when the phone has one, 0 = shape check only
+    maxSideRatio: 1.3,      // auto-capture: max ratio between opposite sides of the detected pattern (perspective)
+    minAreaFrac: 0.15,      // auto-capture: pattern must cover at least this share of the frame
+    aspectMin: 1.12,        // auto region: accepted width / height of the detected pattern ...
+    aspectMax: 1.6,         // ... outside this a pass is downgraded to uncertain (part of the pattern may be missing)
   };
 
   function percentile(sorted, p) {

@@ -68,6 +68,9 @@ Minimum 5 captures per row. Fill the counts from the exported CSV.
 
 ## 6. Observations
 
+- Automatic capture: did it trigger? How long did it take? Did the outline follow the pattern edge?
+- Automatic vs manual region on the same sheet: same result?
+
 - Lighting where readings became uncertain:
 - Reflections / tapping problems:
 - Anything else:

@@ -33,6 +33,8 @@
   /* Landscape preview: what is visible here is exactly what Capture keeps (centre crop, 4:3) */
   .camwrap { position:relative; width:100%; max-width:calc(42vh * 4 / 3); margin:0 auto; aspect-ratio:4 / 3; background:#000; border-radius:8px; overflow:hidden; }
   .camwrap video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
+  .camwrap canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .autostatus { position:absolute; left:0; right:0; bottom:0; padding:6px 8px; background:#000a; color:#fff; font-weight:700; font-size:14px; text-align:center; }
   .camframe { position:absolute; inset:6%; border:2px dashed #ffffffb0; border-radius:4px; pointer-events:none; }
   button.capture { display:block; width:100%; margin:8px 0 6px; padding:12px; font-size:17px; }
   .locks { display:flex; flex-wrap:wrap; gap:4px 14px; font-size:14px; }
@@ -75,11 +77,14 @@
     </div>
     <div id="camWrap" class="camwrap hidden">
       <video id="video" playsinline muted autoplay></video>
+      <canvas id="liveOverlay" width="360" height="270"></canvas>
       <div class="camframe"></div>
+      <div id="autoStatus" class="autostatus hidden"></div>
     </div>
     <div id="camControls" class="hidden">
       <button id="btnCapture" class="capture">Capture</button>
       <div class="locks">
+        <label id="autoLabel"><input type="checkbox" id="autoCapture" checked> Auto</label>
         <label><input type="checkbox" id="lockExposure"> Exposure</label>
         <label><input type="checkbox" id="lockWB"> White bal.</label>
         <label><input type="checkbox" id="lockFocus"> Focus</label>
@@ -100,6 +105,7 @@
     </div>
     <div class="row">
       <button id="btnSkipWhite" class="secondary">Skip white reference</button>
+      <button id="btnAutoRoi" class="secondary">Auto-select region</button>
       <button id="btnResetRoi" class="secondary">Reset regions</button>
       <button id="btnRetake" class="secondary">Retake</button>
     </div>
@@ -222,6 +228,7 @@
   <p class="muted">Build <span id="buildId"></span></p>
 </main>
 <script src="colour.js"></script>
+<script src="detect.js"></script>
 <script src="products.js"></script>
 <script src="app.js"></script>
 </body>

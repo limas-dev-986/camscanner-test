@@ -23,7 +23,8 @@ Everything runs on the phone. There is no backend, no upload, no analytics, and 
 | `app.js` | Camera, region selection, calibration, log, export, capability report |
 | `products.js` | The list of objects (add new ones here) |
 | `colour.js` | Colour maths: sRGB → CIELAB, CIEDE2000, white-reference correction, vial classification, sheet analysis |
-| `tests/colour.test.js` | `node tests/colour.test.js` checks the colour maths |
+| `detect.js` | Automatic region: finds the striped pattern, returns its corners, straightens it |
+| `tests/colour.test.js`, `tests/detect.test.js` | `node tests/colour.test.js` and `node tests/detect.test.js` check the colour maths and the automatic region |
 | `RESULTS_TEMPLATE.md` | One sheet per phone + browser, so sessions can be compared |
 
 ## Hosting
@@ -48,7 +49,13 @@ The repository is **public**. Never commit exported logs, real results, product 
    - the **white area of the label** (white reference), or *Skip white reference*.
    Make the region small enough to sit fully inside the liquid. If the result says "region not uniform", the box covers an edge, text or a reflection.
 
-   For a **Bowie & Dick sheet**: lay the sheet flat, fill most of the frame with it, hold the phone parallel to it, and avoid shadows and reflections. Tap **one corner of the printed pattern**, then the **opposite corner**. Keep the selection inside the pattern (no table, no white margin). The overlay shows the areas analysed: green = OK, red = pink left, orange = lighter or fainter area, grey = not enough stripes.
+   For a **Bowie & Dick sheet** (with **Auto** ticked, the default):
+   - Lay the sheet flat on a table, alone in view, and tap **Capture**. Nothing is photographed yet: the tool waits.
+   - Follow the message on the preview: *Looking for the striped pattern* → *Move back / Move closer* → *Hold the phone flatter* → *Hold still*. The outline around the pattern is yellow while waiting and green when everything is right.
+   - When the whole pattern is inside the dashed frame, the phone is within 20° of flat and has been still for about half a second, the tool takes the photo, selects the pattern and shows the result. Tap **Cancel** to stop waiting.
+   - The overlay shows the selected area and the areas analysed: green = OK, red = pink left, orange = lighter or fainter area, grey = not enough stripes. **Check that the blue outline follows the edge of the pattern** before saving.
+   - To select by hand, tap one corner of the pattern, then the opposite corner. *Auto-select region* runs the automatic selection again. With **Auto** unticked, Capture takes the photo at once and you select by hand.
+
 8. **Tester input:** select the expected result (what you know the vial is), the lighting, the angle and a sample ID (e.g. `P1`, `Y2`). Then *Save to log*.
 9. Repeat at least **5 captures per combination** (phone × lighting × camera mode × angle), as in the test plan.
 10. **Export CSV and JSON** at the end of the session, and save them outside the repository folder.
@@ -81,6 +88,10 @@ A colour change is never upgraded to "no colour change".
 
 ### Sheet (Bowie & Dick)
 
+**Automatic region.** The photo is scanned for points that have light and dark stripes on both sides of them (a single edge such as the card border or a shadow does not count). The largest such area is outlined, a straight line is fitted to each of its four sides, and the resulting quadrilateral is straightened into an upright rectangle, which removes rotation and perspective. Faded areas *inside* the pattern stay inside the outline. If stripes have completely vanished along an *edge*, the outline shrinks and the shape no longer matches the sheet (width : height outside 1.12–1.6): a pass is then downgraded to uncertain.
+
+**Automatic capture.** The same detection runs on the live preview about seven times a second. The photo is taken when: the pattern is found, clear of the frame edge and covers at least 15% of the frame; the phone's motion sensor reports at most 20° from flat (this assumes the sheet lies on a horizontal surface; set *use motion sensor* to 0 in section 7 otherwise); opposite sides of the outline differ by at most 30% (perspective); and the outline has been still for three checks. Phones without a motion sensor use the shape check only. Tilt, rotation, shape and whether capture and region were automatic are logged.
+
 The selected pattern is split into a 5 × 5 grid of areas.
 
 1. **Stripe vs paper:** in each area, the paper white is the brightest 10% of pixels. A pixel counts as stripe if it is clearly darker than the paper *of its own area*. That way a shadow or uneven light across the sheet is not mistaken for uneven darkening.
@@ -106,7 +117,8 @@ Append an entry to `products.js` (id, label, method `vial` or `sheet`, messages,
 ## Known limitations
 
 - The tool cannot tell the purple cap from purple liquid. The tester must tap the liquid.
-- Bowie & Dick: the sheet selection is an axis-aligned rectangle. Hold the phone parallel to the sheet; a strongly tilted shot puts table or margin into the selection.
+- Bowie & Dick, manual selection: the two-corner selection is an upright rectangle and is not straightened. Use it with the phone parallel to the sheet.
+- Bowie & Dick, automatic selection: tuned on synthetic images only so far. Expect one sheet in view, on a plain surface. A sheet whose stripes have vanished along a whole edge can be outlined too small; the shape check catches large cases only. Automatic selection is not available for vials yet.
 - Phone cameras process colour automatically (white balance, tone mapping). That is exactly what this test measures.
 - On iPhone, all browsers use Apple's WebKit engine, which is expected to expose fewer camera controls than Chrome on Android. The capability report records what is available.
 - CSV uses comma separators and dot decimals. In Excel with Romanian regional settings, import via *Data → From Text/CSV* and set the delimiter to comma.

@@ -34,6 +34,7 @@
       },
       expected: { pass: 'All black, uniform (pass)', fail: 'Pink left / uneven (fail)' },
       calibration: false,
+      autoRegion: true,
     },
   ];
 })(window);

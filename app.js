@@ -2,8 +2,9 @@
 (function () {
   'use strict';
   const C = window.Colour;
+  const D = window.Detect;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-19.5';
+  const BUILD = '2026-11-19.6';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -47,6 +48,8 @@
     refs: store.get(K.refs, { purple: [], yellow: [] }),
     thresholds: loadThresholds(),
     locks: { exposure: false, wb: false, focus: false, torch: false },
+    tilt: null,           // { deg, beta, gamma, ts } from the motion sensor
+    auto: { active: false, timer: null, last: null, stable: 0 },
   };
   const thr = () => state.thresholds[state.product.id];
 
@@ -71,6 +74,9 @@
       : 'Reads the whole printed pattern of the sheet, area by area. Hold the phone parallel to the sheet; avoid shadows and reflections.';
     $('roiSizeRow').classList.toggle('hidden', !vial);
     $('btnSkipWhite').classList.toggle('hidden', !vial);
+    $('btnAutoRoi').classList.toggle('hidden', !state.product.autoRegion);
+    $('autoLabel').classList.toggle('hidden', !state.product.autoRegion);
+    stopAuto();
     $('calibBox').classList.toggle('hidden', !state.product.calibration);
     $('refSection').classList.toggle('hidden', !state.product.calibration);
     const exp = $('expected');
@@ -117,6 +123,7 @@
   }
 
   function stopCamera() {
+    stopAuto();
     if (state.stream) state.stream.getTracks().forEach((t) => t.stop());
     state.stream = null; state.track = null; state.imageCapture = null;
   }
@@ -189,20 +196,29 @@
   // ======================================================================
   // Capture keeps the same centre crop the landscape preview shows (object-fit: cover)
   const CAPTURE_ASPECT = 4 / 3;
-  function capture() {
-    if (!video.videoWidth) return;
+  // Grab the visible part of the video. outW = output width (omit for full resolution).
+  function grabFrame(outW, canvas) {
     const vw = video.videoWidth, vh = video.videoHeight;
     let sw = vw, sh = vh;
     if (vw / vh > CAPTURE_ASPECT) sw = Math.round(vh * CAPTURE_ASPECT); else sh = Math.round(vw / CAPTURE_ASPECT);
     const sx = Math.round((vw - sw) / 2), sy = Math.round((vh - sh) / 2);
-    const w = sw, h = sh;
-    const off = document.createElement('canvas');
+    const w = outW || sw, h = outW ? Math.round(outW / CAPTURE_ASPECT) : sh;
+    const off = canvas || document.createElement('canvas');
     off.width = w; off.height = h;
     const octx = off.getContext('2d', { willReadFrequently: true });
     octx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
-    state.frameCanvas = off;
-    state.frame = octx.getImageData(0, 0, w, h);
+    return { canvas: off, image: octx.getImageData(0, 0, w, h), vw, vh };
+  }
+
+  function capture(autoInfo) {
+    if (!video.videoWidth) return;
+    const g = grabFrame();
+    const w = g.image.width, h = g.image.height, vw = g.vw, vh = g.vh;
+    state.frameCanvas = g.canvas;
+    state.frame = g.image;
     state.captureMeta = {
+      autoCapture: !!autoInfo,
+      tiltDeg: tiltFresh() ? state.tilt.deg : null,
       settings: trackSettings(),
       locks: Object.assign({}, state.locks),
       width: w, height: h, videoWidth: vw, videoHeight: vh,
@@ -211,7 +227,113 @@
     frameCanvas.width = w; frameCanvas.height = h;
     resetRegions();
     $('roiSection').classList.remove('hidden');
+    if (autoInfo) autoRegion();
     $('roiSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ======================================================================
+  // Automatic capture (sheets): wait until the pattern is in view, the angle is right and the phone is still
+  // ======================================================================
+  const liveCanvas = document.createElement('canvas');
+  const overlay = $('liveOverlay');
+  const octxLive = overlay.getContext('2d');
+
+  function onOrientation(e) {
+    if (e.beta === null || e.gamma === null) return;
+    const rad = Math.PI / 180;
+    const deg = Math.acos(Math.min(1, Math.max(-1, Math.cos(e.beta * rad) * Math.cos(e.gamma * rad)))) / rad;
+    state.tilt = { deg: deg, beta: e.beta, gamma: e.gamma, ts: Date.now() };
+  }
+  let orientationHooked = false;
+  function hookOrientation() {
+    if (orientationHooked || typeof DeviceOrientationEvent === 'undefined') return;
+    const add = () => { window.addEventListener('deviceorientation', onOrientation); orientationHooked = true; };
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission().then((r) => { if (r === 'granted') add(); }).catch(() => {}); // iOS: needs the tap
+    } else add();
+  }
+  const tiltFresh = () => !!state.tilt && Date.now() - state.tilt.ts < 3000;
+
+  function onCaptureClick() {
+    if (state.auto.active) { stopAuto(); return; }
+    if (!video.videoWidth) return;
+    if (state.product.autoRegion && $('autoCapture').checked) startAuto();
+    else capture();
+  }
+
+  function startAuto() {
+    hookOrientation();
+    state.auto.active = true; state.auto.last = null; state.auto.stable = 0;
+    $('btnCapture').textContent = 'Cancel';
+    $('autoStatus').classList.remove('hidden');
+    $('autoStatus').textContent = 'Looking for the striped pattern…';
+    autoTick();
+  }
+
+  function stopAuto() {
+    if (state.auto.timer) clearTimeout(state.auto.timer);
+    state.auto.active = false; state.auto.timer = null;
+    $('btnCapture').textContent = 'Capture';
+    $('autoStatus').classList.add('hidden');
+    octxLive.clearRect(0, 0, overlay.width, overlay.height);
+  }
+
+  function autoTick() {
+    if (!state.auto.active) return;
+    const a = state.auto, t = thr();
+    const g = grabFrame(overlay.width, liveCanvas);
+    const d = D.detectPattern(g.image.data, g.image.width, g.image.height);
+    let msg = '', ok = false;
+    octxLive.clearRect(0, 0, overlay.width, overlay.height);
+    if (!d.found) msg = 'Looking for the striped pattern…';
+    else if (d.touchesBorder) msg = 'Move back: keep the whole pattern inside the dashed frame';
+    else if (d.areaFrac < t.minAreaFrac) msg = 'Move closer';
+    else if (t.useTiltSensor && tiltFresh() && state.tilt.deg > t.maxTiltDeg) msg = 'Hold the phone flatter: ' + Math.round(state.tilt.deg) + '° (max ' + t.maxTiltDeg + '°)';
+    else if (d.sideRatio > t.maxSideRatio) msg = 'Hold the phone more parallel to the sheet';
+    else ok = true;
+    if (d.found) {
+      octxLive.lineWidth = 3; octxLive.strokeStyle = ok ? '#00e676' : '#ffea00';
+      octxLive.beginPath();
+      d.corners.forEach((p, i) => (i ? octxLive.lineTo(p.x, p.y) : octxLive.moveTo(p.x, p.y)));
+      octxLive.closePath(); octxLive.stroke();
+    }
+    if (ok) {
+      const moved = a.last ? Math.max.apply(null, d.corners.map((p, i) => Math.hypot(p.x - a.last[i].x, p.y - a.last[i].y))) : Infinity;
+      a.stable = moved < 0.03 * g.image.width ? a.stable + 1 : 0;
+      a.last = d.corners;
+      msg = 'Hold still…';
+      if (a.stable >= 3) { stopAuto(); capture({ auto: true }); return; }
+    } else { a.stable = 0; a.last = null; }
+    $('autoStatus').textContent = msg;
+    a.timer = setTimeout(autoTick, 150);
+  }
+
+  // Automatic region on the captured frame: find the pattern, straighten it, analyse it
+  function autoRegion() {
+    if (!state.frame || !state.product.autoRegion) return;
+    const f = state.frame, t = thr();
+    state.corners = [];
+    const d = D.detectPattern(f.data, f.width, f.height);
+    if (!d.found) {
+      state.lastReading = null; $('resultSection').classList.add('hidden');
+      state.autoNote = 'Pattern not found automatically. '; redraw(); state.autoNote = '';
+      return;
+    }
+    const rect = D.rectify(f.data, f.width, f.height, d.corners, 900);
+    const r = C.analyseSheet(rect.data, rect.width, rect.height, { x0: 0, y0: 0, x1: rect.width, y1: rect.height }, t);
+    if (r.error) { state.lastReading = null; showError(r.error); redraw(); return; }
+    let cls = r.cls;
+    const reasons = r.reasons.slice();
+    if (cls === 'pass' && (d.aspect < t.aspectMin || d.aspect > t.aspectMax || d.touchesBorder)) {
+      cls = 'uncertain';
+      reasons.unshift(d.touchesBorder ? 'pattern touches the edge of the photo: part of it may be missing'
+        : 'detected area has an unexpected shape (' + d.aspect.toFixed(2) + ' : 1): part of the pattern may be missing. Retake or tap the corners');
+    }
+    reasons.push('region selected automatically');
+    state.lastReading = { method: 'sheet', cls: cls, reasons: reasons, sheet: r,
+      auto: { corners: d.corners, aspect: d.aspect, sideRatio: d.sideRatio, areaFrac: d.areaFrac, angleDeg: d.angleDeg, map: rect.map, w: rect.width, h: rect.height } };
+    showResult();
+    redraw();
   }
 
   function resetRegions() {
@@ -254,6 +376,11 @@
         ctx.fillStyle = '#00e5ff'; ctx.beginPath(); ctx.arc(p.x, p.y, lw * 4, 0, Math.PI * 2); ctx.fill();
       });
       const r = state.lastReading && state.lastReading.sheet;
+      const au = state.lastReading && state.lastReading.auto;
+      // cell boxes are in the straightened image for automatic regions: map them back onto the photo
+      const toFrame = au ? (x, y) => au.map(x / au.w, y / au.h) : (x, y) => [x, y];
+      const poly = (pts) => { ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.closePath(); ctx.stroke(); };
+      if (au) { ctx.lineWidth = lw; ctx.strokeStyle = '#00e5ff'; poly(au.corners.map((p) => [p.x, p.y])); }
       if (state.corners.length === 2) {
         const [a, b] = state.corners;
         ctx.lineWidth = lw; ctx.strokeStyle = '#00e5ff';
@@ -269,12 +396,15 @@
           else if (c.medianL > t.passWorstCellL) colour = '#ff9100';
           if (colour !== '#ff1744' && c.inkDensity !== undefined && typical > 0 && c.inkDensity / typical < t.passInkRatio) colour = '#ff9100';
           ctx.lineWidth = Math.max(1, lw / 2); ctx.strokeStyle = colour;
-          ctx.strokeRect(c.box[0] + lw, c.box[1] + lw, c.box[2] - c.box[0] - 2 * lw, c.box[3] - c.box[1] - 2 * lw);
+          const k = au ? lw * au.w / Math.max(1, Math.hypot(au.corners[1].x - au.corners[0].x, au.corners[1].y - au.corners[0].y)) : lw;
+          poly([toFrame(c.box[0] + k, c.box[1] + k), toFrame(c.box[2] - k, c.box[1] + k), toFrame(c.box[2] - k, c.box[3] - k), toFrame(c.box[0] + k, c.box[3] - k)]);
         });
       }
-      if (state.corners.length === 0) step = 'Tap one CORNER of the printed pattern (e.g. top-left).';
+      const legend = 'Boxes: green = OK, red = pink left, orange = lighter / fainter area, grey = not enough stripes. ';
+      if (au) step = 'Region selected automatically. ' + legend + 'To select by hand instead, tap one corner of the pattern.';
+      else if (state.corners.length === 0) step = (state.autoNote || '') + 'Tap one CORNER of the printed pattern (e.g. top-left).';
       else if (state.corners.length === 1) step = 'Tap the OPPOSITE corner of the printed pattern.';
-      else step = 'Done. Boxes: green = OK, red = pink left, orange = lighter / fainter area, grey = not enough stripes. Tap to start a new selection.';
+      else step = 'Done. ' + legend + 'Tap to start a new selection.';
     }
     $('stepText').textContent = step;
   }
@@ -295,7 +425,7 @@
       redraw();
       if (state.roiIndicator && state.roiWhite) measure();
     } else {
-      if (state.corners.length >= 2) { state.corners = []; state.lastReading = null; $('resultSection').classList.add('hidden'); }
+      if (state.corners.length >= 2 || (state.lastReading && state.lastReading.auto)) { state.corners = []; state.lastReading = null; $('resultSection').classList.add('hidden'); }
       state.corners.push({ x: x, y: y });
       if (state.corners.length === 2) measure();
       redraw();
@@ -319,7 +449,7 @@
   const VIAL_CLASS = { no_growth: 'pass', growth: 'fail', uncertain: 'uncertain' };
 
   function measure() {
-    if (state.product.method === 'sheet') return measureSheet();
+    if (state.product.method === 'sheet') return state.corners.length === 2 ? measureSheet() : autoRegion();
     const f = state.frame;
     const size = roiPx();
     const ind = C.regionStats(f.data, f.width, f.height, state.roiIndicator.x, state.roiIndicator.y, size);
@@ -413,6 +543,8 @@
         ['Weakest stripe density vs typical', pct(m.minInkRatio)],
         ['Glare', pct(m.clippedFrac)],
         ['Areas analysed', m.cellsUsed + ' of ' + m.cellsTotal + ' (sampling every ' + m.step + ' px)'],
+        ['Region', r.auto ? 'automatic · shape ' + fmt(r.auto.aspect, 2) + ' : 1 · rotation ' + fmt(r.auto.angleDeg, 0) + '° · perspective ' + fmt(r.auto.sideRatio, 2) : 'manual (two corners)'],
+        ['Capture', (state.captureMeta.autoCapture ? 'automatic' : 'manual') + (state.captureMeta.tiltDeg === null ? ' · no tilt sensor reading' : ' · phone tilt ' + fmt(state.captureMeta.tiltDeg, 0) + '°')],
       ];
     }
     $('resultTable').innerHTML = rows.map((x) => '<tr><th>' + x[0] + '</th><td>' + x[1] + '</td></tr>').join('');
@@ -449,6 +581,8 @@
       deviceInfo(),
       {
         cameraLabel: state.captureMeta.cameraLabel,
+        autoCapture: state.captureMeta.autoCapture,
+        tiltDeg: state.captureMeta.tiltDeg === null ? '' : round(state.captureMeta.tiltDeg, 1),
         resolution: state.captureMeta.width + 'x' + state.captureMeta.height,
         videoResolution: state.captureMeta.videoWidth + 'x' + state.captureMeta.videoHeight,
         lockExposure: state.captureMeta.locks.exposure,
@@ -504,7 +638,12 @@
   function sheetFields(r) {
     const m = r.sheet.metrics;
     return {
-      sheet_rect: [r.rect.x0, r.rect.y0, r.rect.x1, r.rect.y1].map((v) => Math.round(v)).join(' '),
+      sheet_region: r.auto ? 'auto' : 'manual',
+      sheet_rect: r.auto ? r.auto.corners.map((p) => Math.round(p.x) + ' ' + Math.round(p.y)).join(' | ') : [r.rect.x0, r.rect.y0, r.rect.x1, r.rect.y1].map((v) => Math.round(v)).join(' '),
+      sheet_aspect: r.auto ? round(r.auto.aspect) : '',
+      sheet_sideRatio: r.auto ? round(r.auto.sideRatio) : '',
+      sheet_rotationDeg: r.auto ? round(r.auto.angleDeg, 1) : '',
+      sheet_areaPct: r.auto ? round(r.auto.areaFrac * 100, 1) : '',
       sheet_paper_r: round(C.linearToSrgb(m.paperLin[0]), 1), sheet_paper_g: round(C.linearToSrgb(m.paperLin[1]), 1), sheet_paper_b: round(C.linearToSrgb(m.paperLin[2]), 1),
       sheet_inkPct: round(m.inkFrac * 100, 1),
       sheet_pinkPct: round(m.pinkFrac * 100, 2),
@@ -627,6 +766,9 @@
     passPinkFrac: 'Pass: max pink share (whole)', passCellPinkFrac: 'Pass: max pink share (any area)',
     passInkL: 'Pass: max median stripe L*', passWorstCellL: 'Pass: max L* of lightest area', passInkRatio: 'Pass: min stripe density ratio',
     failPinkFrac: 'Fail: pink share (whole) from', failCellPinkFrac: 'Fail: pink share (any area) from',
+    maxTiltDeg: 'Auto-capture: max tilt (°)', useTiltSensor: 'Auto-capture: use motion sensor (1/0)',
+    maxSideRatio: 'Auto-capture: max opposite-side ratio', minAreaFrac: 'Auto-capture: min share of frame',
+    aspectMin: 'Auto region: min width/height', aspectMax: 'Auto region: max width/height',
     failInkL: 'Fail: stripe L* from', failSpreadL: 'Fail: ΔL* between areas from (if lightest area not black)', failInkRatio: 'Fail: stripe density ratio below',
   };
   function renderThresholds() {
@@ -656,6 +798,8 @@
       getUserMedia: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
       imageCaptureApi: 'ImageCapture' in window,
       barcodeDetectorApi: 'BarcodeDetector' in window,
+      deviceOrientationApi: typeof DeviceOrientationEvent !== 'undefined',
+      tiltSensorSeen: !!state.tilt,
       devicePixelRatio: window.devicePixelRatio,
       screen: screen.width + 'x' + screen.height,
     };
@@ -708,6 +852,7 @@
       ['Focus distance range', range('focusDistance')],
       ['Torch', 'torch' in caps ? 'yes' : 'not exposed'],
       ['ImageCapture API', yn(rep.imageCaptureApi)],
+      ['Tilt (motion) sensor', rep.tiltSensorSeen ? 'yes, readings received' : rep.deviceOrientationApi ? 'API present, no reading yet (run one auto-capture)' : 'no'],
       ['BarcodeDetector', rep.barcodeDetectorApi ? 'yes: ' + escapeHtml((rep.barcodeFormats || []).join(', ') || 'no formats') : 'no'],
       ['QR / DataMatrix', rep.barcodeFormats ? yn(rep.barcodeFormats.indexOf('qr_code') !== -1) + ' / ' + yn(rep.barcodeFormats.indexOf('data_matrix') !== -1) : '—'],
     ];
@@ -741,7 +886,8 @@
   $('lockWB').addEventListener('change', (e) => setLock('wb', e.target.checked));
   $('lockFocus').addEventListener('change', (e) => setLock('focus', e.target.checked));
   $('torch').addEventListener('change', (e) => setLock('torch', e.target.checked));
-  $('btnCapture').addEventListener('click', capture);
+  $('btnCapture').addEventListener('click', onCaptureClick);
+  $('btnAutoRoi').addEventListener('click', autoRegion);
   frameCanvas.addEventListener('click', onFrameTap);
   $('roiSize').addEventListener('input', () => { redraw(); if (state.roiIndicator && state.roiWhite) measure(); });
   $('btnSkipWhite').addEventListener('click', () => { state.roiWhite = 'skipped'; redraw(); measure(); });
