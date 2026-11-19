@@ -7,7 +7,7 @@ A single web page that checks whether a phone browser can read the colour change
 | Object | Pass | Fail | Result shown (pass / fail) |
 |---|---|---|---|
 | Biological indicator, self-contained vial | Liquid stays purple | Liquid turns yellow / green | Fără creștere bacteriană - Procesul a avut succes / Creștere bacteriană - Proces eșuat! |
-| Bowie & Dick test sheet | Pink stripes turned uniformly black | Pink left, or lighter / uneven areas | Virare completă la negru - Test Bowie & Dick trecut / Virare incompletă - Test Bowie & Dick eșuat! |
+| Bowie & Dick test sheet | Pink stripes turned uniformly black | Pink left, or lighter / uneven areas | Virare completă la negru - Test trecut / Virare incompletă - Test eșuat! |
 
 Anything not clearly pass or fail shows "Rezultat incert - Repetați citirea".
 

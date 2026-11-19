@@ -3,7 +3,7 @@
   'use strict';
   const C = window.Colour;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-19.2';
+  const BUILD = '2026-11-19.3';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------

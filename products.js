@@ -28,8 +28,8 @@
       label: 'Bowie & Dick test sheet (pink → uniform black)',
       method: 'sheet',
       messages: {
-        pass: 'Virare completă la negru - Test Bowie & Dick trecut',
-        fail: 'Virare incompletă - Test Bowie & Dick eșuat!',
+        pass: 'Virare completă la negru - Test trecut',
+        fail: 'Virare incompletă - Test eșuat!',
         uncertain: 'Rezultat incert - Repetați citirea',
       },
       expected: { pass: 'All black, uniform (pass)', fail: 'Pink left / uneven (fail)' },
