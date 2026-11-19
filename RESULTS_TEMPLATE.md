@@ -1,12 +1,13 @@
-# Results template: biological indicator colour test
+# Results template: indicator colour test
 
-Fill in one copy per **phone + browser**. Keep completed copies **outside this public repository** (e.g. the internal project folder).
+Fill in one copy per **phone + browser + object type**. Keep completed copies **outside this public repository** (e.g. the internal project folder).
 
 ## 1. Session
 
 | Field | Value |
 |---|---|
 | Date | |
+| Object type (as selected in the tool) | |
 | Tester (initials) | |
 | Device label (as entered in the tool) | |
 | Phone model | |
@@ -35,14 +36,16 @@ Fill in one copy per **phone + browser**. Keep completed copies **outside this p
 
 | Sample ID | Known state | How known (e.g. incubated full time, positive control) |
 |---|---|---|
-| P1 | Purple (no growth) | |
-| Y1 | Yellow (growth) | |
+| P1 | Vial: purple (no growth) | |
+| Y1 | Vial: yellow (growth) | |
+| B1 | B&D: uniform black (pass) | |
+| F1 | B&D: pink left / uneven (fail) | |
 
 ## 4. Results per condition
 
 Minimum 5 captures per row. Fill the counts from the exported CSV.
 
-| Lighting | Camera mode | White ref | Angle | Samples | Captures | Correct | Uncertain | **Unsafe (yellow read as purple)** | Wrong but safe (purple read as yellow) |
+| Lighting | Camera mode | White ref (vial only) | Angle | Samples | Captures | Correct | Uncertain | **Unsafe (fail read as pass)** | Wrong but safe (pass read as fail) |
 |---|---|---|---|---|---|---|---|---|---|
 | Cool fluorescent (CSSD) | Auto | Yes | Recommended | | | | | | |
 | Cool fluorescent (CSSD) | Auto | No | Recommended | | | | | | |
@@ -57,7 +60,7 @@ Minimum 5 captures per row. Fill the counts from the exported CSV.
 
 | Criterion | Target | Result | Met? |
 |---|---|---|---|
-| Accuracy, purple vs yellow | ≥ 98% | | |
+| Accuracy, pass vs fail | ≥ 98% | | |
 | Unsafe errors | 0 | | |
 | Repeatability (no class overlap) | | | |
 | Uncertain flagged, not forced | | | |

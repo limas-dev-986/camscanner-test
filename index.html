@@ -48,8 +48,15 @@
 <body>
 <div class="banner">Test tool only. Not for sterilisation decisions.</div>
 <main>
-  <h1>Indicator colour test: biological indicators</h1>
+  <h1>Indicator colour test</h1>
   <p class="muted">Feasibility test. Everything runs on this phone: no uploads, no tracking. Results stay on the device until you export them.</p>
+
+  <!-- 0. Object -->
+  <section>
+    <h2>Object to test</h2>
+    <select id="selProduct" aria-label="Object to test" style="width:100%"></select>
+    <p id="productHint" class="muted"></p>
+  </section>
 
   <!-- 1. Camera -->
   <section id="camSection">
@@ -77,7 +84,7 @@
     <h2>2. Select regions</h2>
     <div id="stepText" class="step"></div>
     <canvas id="frame" class="frame"></canvas>
-    <div class="row">
+    <div class="row" id="roiSizeRow">
       <label>Region size <input type="range" id="roiSize" min="1" max="12" step="0.5" value="4"> <span id="roiSizeVal"></span></label>
     </div>
     <div class="row">
@@ -99,9 +106,7 @@
       <label>Expected result
         <select id="expected">
           <option value="">— select —</option>
-          <option value="no_growth">Purple (no growth)</option>
-          <option value="growth">Yellow / green (growth)</option>
-          <option value="unknown">Unknown</option>
+
         </select>
       </label>
       <label>Lighting
@@ -135,7 +140,7 @@
       <button id="btnSaveLog">Save to log</button>
       <span id="saveStatus" class="muted"></span>
     </div>
-    <details>
+    <details id="calibBox">
       <summary>Calibration: save this reading as a reference</summary>
       <p class="muted">Use only samples whose state you know. Save several of each, ideally under the lighting you test in.</p>
       <div class="row">
@@ -160,7 +165,7 @@
   </section>
 
   <!-- 5. Calibration status -->
-  <section>
+  <section id="refSection">
     <h2>5. Calibration references</h2>
     <div class="scroll"><table id="refTable"></table></div>
     <div class="row">
@@ -206,6 +211,7 @@
   <p class="muted">Build <span id="buildId"></span></p>
 </main>
 <script src="colour.js"></script>
+<script src="products.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

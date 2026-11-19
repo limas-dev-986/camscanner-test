@@ -63,5 +63,37 @@ for (let i = 0; i < W * H; i++) { data[i * 4] = 147; data[i * 4 + 1] = 90; data[
 const st = C.regionStats(data, W, H, 5, 5, 6);
 check('regionStats mean', st.srgb.every((v, i) => near(v, [147, 90, 210][i], 0.5)) && st.spreadL < 1e-6 && st.clippedFrac === 0);
 
-console.log(failed ? '\n' + failed + ' test(s) failed' : '\nall tests passed');
+// ---------- Bowie & Dick sheet ----------
+// Synthetic chevron/X stripe pattern. ink(x, y) returns the stripe colour at a point; paper(x, y) the paper.
+function sheet(ink, paper, light) {
+  const w = 300, h = 240, d = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const u = x - w / 2, v = y - h / 2;
+    const s = Math.abs(u) > Math.abs(v) * 1.25 ? Math.abs(u) + Math.abs(v) : Math.abs(v) - Math.abs(u) * 0.8 + 400;
+    const stripe = Math.floor(s / 6) % 2 === 0;
+    let c = stripe ? ink(x / w, y / h) : paper(x / w, y / h);
+    const k = light ? light(x / w, y / h) : 1;
+    const i = (y * w + x) * 4;
+    d[i] = c[0] * k; d[i + 1] = c[1] * k; d[i + 2] = c[2] * k; d[i + 3] = 255;
+  }
+  return C.analyseSheet(d, w, h, { x0: 0, y0: 0, x1: w, y1: h });
+}
+const WHITE = () => [238, 236, 232];
+const BLACK = () => [22, 22, 24];
+const PINK = () => [235, 60, 150];
+const centre = (inside, outside) => (x, y) => (Math.abs(x - 0.5) < 0.17 && Math.abs(y - 0.5) < 0.17 ? inside : outside);
+const sheetCase = (name, r, exp) => check('sheet: ' + name + ' -> ' + exp, r.cls === exp, 'got ' + r.cls + ' ' + (r.reasons || []).join('; ') + ' ' + JSON.stringify(r.metrics && { p: r.metrics.pinkFrac, L: r.metrics.medianInkL, s: r.metrics.spreadL, d: r.metrics.minInkRatio }));
+sheetCase('uniform black', sheet(BLACK, WHITE), 'pass');
+sheetCase('all pink (unprocessed)', sheet(PINK, WHITE), 'fail');
+sheetCase('lighter grey centre', sheet(centre([120, 120, 120], [22, 22, 24]), WHITE), 'fail');
+sheetCase('faint centre', sheet(centre([205, 203, 200], [22, 22, 24]), WHITE), 'fail');
+sheetCase('pink patch in centre', sheet(centre([235, 60, 150], [22, 22, 24]), WHITE), 'fail');
+sheetCase('uniform black, uneven lighting', sheet(BLACK, WHITE, (x) => 0.55 + 0.45 * x), 'pass');
+sheetCase('uniform black, warm light', sheet(() => [30, 24, 14], () => [245, 222, 170]), 'pass');
+sheetCase('pink, warm light', sheet(() => [250, 70, 90], () => [245, 222, 170]), 'fail');
+sheetCase('uniform dark grey', sheet(() => [95, 95, 95], WHITE), 'uncertain');
+const blank = new Uint8ClampedArray(100 * 100 * 4).fill(235);
+check('sheet: blank paper -> uncertain', C.analyseSheet(blank, 100, 100, { x0: 0, y0: 0, x1: 100, y1: 100 }).cls === 'uncertain');
+
+console.log(failed ?'\n' + failed + ' test(s) failed' : '\nall tests passed');
 process.exit(failed ? 1 : 0);

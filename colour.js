@@ -255,16 +255,171 @@
     return out('uncertain');
   }
 
-  const MESSAGES = {
-    no_growth: 'Fără creștere bacteriană - Procesul a avut succes',
-    growth: 'Creștere bacteriană - Proces eșuat!',
-    uncertain: 'Rezultat incert - Repetați citirea',
+  // ---------- Sheet analysis (Bowie & Dick: pink stripes -> uniformly black) ----------
+  const SHEET_DEFAULTS = {
+    insetFrac: 0.04,        // ignore this share of the selected rectangle at each edge
+    grid: 5,                // grid x grid cells
+    inkDeltaL: 25,          // a pixel is "stripe" if its relative L* is this much below the local paper
+    minInkFrac: 0.08,       // fewer stripe pixels than this share = wrong region
+    minInkPerCell: 30,      // cells with fewer stripe pixels are ignored
+    pinkChroma: 20,         // stripe pixel counts as pink at or above this chroma ...
+    pinkHueMin: 300,        // ... with hue in this band (magenta-pink-red)
+    pinkHueMax: 40,
+    passPinkFrac: 0.02,     // pass: pink share of stripe pixels, whole sheet
+    passCellPinkFrac: 0.05, // pass: pink share in the worst cell
+    passInkL: 38,           // pass: median stripe darkness (relative L*), lower = blacker
+    passSpreadL: 12,        // pass: max difference in stripe darkness between cells
+    failPinkFrac: 0.10,     // fail: pink share, whole sheet
+    failCellPinkFrac: 0.20, // fail: pink share in any cell
+    failInkL: 60,           // fail: stripes clearly not dark
+    failSpreadL: 20,        // fail: clearly uneven darkening (e.g. lighter centre)
+    passInkRatio: 0.6,      // pass: every cell has at least this share of the typical stripe density
+    failInkRatio: 0.35,     // fail: a cell with less stripe density than this = faint / unchanged area
+    maxClippedFrac: 0.15,   // glare
   };
+
+  function percentile(sorted, p) {
+    if (!sorted.length) return 0;
+    const i = Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * p)));
+    return sorted[i];
+  }
+  function median(arr) {
+    if (!arr.length) return null;
+    const s = Float64Array.from(arr).sort();
+    return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
+  }
+  const yToL = (Y) => (Y > 216 / 24389 ? 116 * Math.cbrt(Y) - 16 : (24389 / 27) * Y);
+
+  /**
+   * Glare = all three channels saturated (a vivid pink may saturate one channel and is still analysed).
+   * Analyse a test sheet inside rect {x0, y0, x1, y1} (pixel coords).
+   * Darkness is measured relative to the local paper white of each cell, so uneven lighting
+   * across the sheet is not mistaken for uneven darkening. Colour (pink) is measured after
+   * correcting with the sheet's own paper white.
+   */
+  function analyseSheet(data, width, height, rect, thresholds) {
+    const t = Object.assign({}, SHEET_DEFAULTS, thresholds || {});
+    const rw = rect.x1 - rect.x0, rh = rect.y1 - rect.y0;
+    const x0 = Math.max(0, Math.round(rect.x0 + rw * t.insetFrac));
+    const y0 = Math.max(0, Math.round(rect.y0 + rh * t.insetFrac));
+    const x1 = Math.min(width, Math.round(rect.x1 - rw * t.insetFrac));
+    const y1 = Math.min(height, Math.round(rect.y1 - rh * t.insetFrac));
+    const G = Math.max(1, Math.round(t.grid));
+    const cw = (x1 - x0) / G, ch = (y1 - y0) / G;
+    const step = Math.max(1, Math.floor(Math.sqrt(((x1 - x0) * (y1 - y0)) / 160000)));
+    if (x1 - x0 < 20 || y1 - y0 < 20) return { error: 'Selected area too small.' };
+
+    // Pass 1: luminance per cell, paper colour
+    const cellY = Array.from({ length: G * G }, () => []);
+    let total = 0, clipped = 0;
+    const allY = [];
+    for (let y = y0; y < y1; y += step) {
+      for (let x = x0; x < x1; x += step) {
+        const i = (y * width + x) * 4;
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        total++;
+        if (r >= 250 && g >= 250 && b >= 250) { clipped++; continue; }
+        const Y = 0.2126729 * LIN[r] + 0.7151522 * LIN[g] + 0.072175 * LIN[b];
+        const c = Math.min(G - 1, Math.floor((y - y0) / ch)) * G + Math.min(G - 1, Math.floor((x - x0) / cw));
+        cellY[c].push(Y);
+        allY.push(Y);
+      }
+    }
+    if (!allY.length) return { error: 'Area fully saturated (glare).' };
+    allY.sort((a, b) => a - b);
+    const paperYGlobal = percentile(allY, 0.9);
+    const cellPaper = cellY.map((ys) => {
+      if (ys.length < 10) return paperYGlobal;
+      const s = Float64Array.from(ys).sort();
+      return Math.max(percentile(s, 0.9), 1e-4);
+    });
+    // Paper colour = mean of the brightest 10% (unclipped)
+    let pr = 0, pg = 0, pb = 0, pn = 0;
+    for (let y = y0; y < y1; y += step) {
+      for (let x = x0; x < x1; x += step) {
+        const i = (y * width + x) * 4;
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        if (r >= 250 && g >= 250 && b >= 250) continue;
+        const Y = 0.2126729 * LIN[r] + 0.7151522 * LIN[g] + 0.072175 * LIN[b];
+        if (Y >= paperYGlobal) { pr += LIN[r]; pg += LIN[g]; pb += LIN[b]; pn++; }
+      }
+    }
+    const paperLin = pn ? [pr / pn, pg / pn, pb / pn] : [1, 1, 1];
+
+    // Pass 2: stripe pixels, pink vs dark, per cell
+    const cells = Array.from({ length: G * G }, (_, c) => ({
+      col: c % G, row: Math.floor(c / G),
+      box: [x0 + (c % G) * cw, y0 + Math.floor(c / G) * ch, x0 + ((c % G) + 1) * cw, y0 + (Math.floor(c / G) + 1) * ch],
+      n: 0, ink: 0, pink: 0, inkL: [],
+    }));
+    let ink = 0, pink = 0;
+    for (let y = y0; y < y1; y += step) {
+      for (let x = x0; x < x1; x += step) {
+        const i = (y * width + x) * 4;
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        if (r >= 250 && g >= 250 && b >= 250) continue;
+        const c = Math.min(G - 1, Math.floor((y - y0) / ch)) * G + Math.min(G - 1, Math.floor((x - x0) / cw));
+        const cell = cells[c];
+        cell.n++;
+        const Y = 0.2126729 * LIN[r] + 0.7151522 * LIN[g] + 0.072175 * LIN[b];
+        const Lrel = yToL(Math.min(1, Y / cellPaper[c]));
+        if (Lrel > 100 - t.inkDeltaL) continue;
+        cell.ink++; ink++;
+        cell.inkL.push(Lrel);
+        const lab = linRgbToLab(applyWhiteReference([LIN[r], LIN[g], LIN[b]], paperLin, 0.85));
+        const lch = labToLch(lab);
+        if (lch.C >= t.pinkChroma && hueIn(lch.h, t.pinkHueMin, t.pinkHueMax)) { cell.pink++; pink++; }
+      }
+    }
+
+    const counted = total - clipped;
+    const inkFrac = counted ? ink / counted : 0;
+    const pinkFrac = ink ? pink / ink : 0;
+    const used = cells.filter((c) => c.ink >= t.minInkPerCell);
+    used.forEach((c) => { c.pinkFrac = c.pink / c.ink; c.medianL = median(c.inkL); });
+    cells.forEach((c) => { delete c.inkL; });
+    const meds = used.map((c) => c.medianL);
+    const medianInkL = meds.length ? median(meds) : null;
+    const spreadL = meds.length ? Math.max.apply(null, meds) - Math.min.apply(null, meds) : null;
+    const maxCellPink = used.length ? Math.max.apply(null, used.map((c) => c.pinkFrac)) : null;
+    const clippedFrac = total ? clipped / total : 0;
+    // Stripe density per cell vs. the typical cell: catches areas where stripes stayed too light to count
+    const dens = cells.filter((c) => c.n >= 20).map((c) => { c.inkDensity = c.ink / c.n; return c.inkDensity; });
+    const typicalDensity = dens.length ? median(dens) : 0;
+    const minInkRatio = typicalDensity > 0 ? Math.min.apply(null, dens) / typicalDensity : 0;
+    const paperLab = linRgbToLab(paperLin);
+
+    const metrics = { inkFrac, pinkFrac, minInkRatio, maxCellPink, medianInkL, spreadL, clippedFrac, cellsUsed: used.length, cellsTotal: G * G, paperLin, paperLab, step };
+    const reasons = [];
+    const res = (cls) => ({ cls, reasons, metrics, cells, rect: { x0, y0, x1, y1 } });
+
+    if (inkFrac < t.minInkFrac || used.length < Math.ceil(G * G * 0.4)) {
+      reasons.push('too few stripe pixels: select the printed pattern only');
+      return res('uncertain');
+    }
+    // Fail checks first (fail-safe direction)
+    if (pinkFrac >= t.failPinkFrac) reasons.push('pink remaining (' + Math.round(pinkFrac * 100) + '% of stripes)');
+    else if (maxCellPink >= t.failCellPinkFrac) reasons.push('pink remaining in part of the sheet (worst area ' + Math.round(maxCellPink * 100) + '%)');
+    if (spreadL >= t.failSpreadL) reasons.push('uneven darkening between areas (ΔL* ' + spreadL.toFixed(0) + ')');
+    if (medianInkL >= t.failInkL) reasons.push('stripes not dark (L* ' + medianInkL.toFixed(0) + ')');
+    if (minInkRatio < t.failInkRatio) reasons.push('stripes faint or missing in part of the sheet');
+    if (reasons.length) return res('fail');
+
+    if (clippedFrac > t.maxClippedFrac) reasons.push('glare on the sheet');
+    if (pinkFrac > t.passPinkFrac || maxCellPink > t.passCellPinkFrac) reasons.push('some pink detected');
+    if (spreadL > t.passSpreadL) reasons.push('darkening slightly uneven');
+    if (medianInkL > t.passInkL) reasons.push('stripes not fully black');
+    if (minInkRatio < t.passInkRatio) reasons.push('stripe density uneven');
+    if (reasons.length) return res('uncertain');
+    reasons.push('uniform black, no pink');
+    return res('pass');
+  }
+
 
   const api = {
     srgbToLinear, linearToSrgb, linRgbToXyz, xyzToLab, linRgbToLab, srgbToLab, labToLch,
-    deltaE2000, regionStats, applyWhiteReference, classify, hueIn,
-    DEFAULT_THRESHOLDS, MESSAGES,
+    deltaE2000, regionStats, applyWhiteReference, classify, hueIn, analyseSheet,
+    DEFAULT_THRESHOLDS, SHEET_DEFAULTS,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Colour = api;
