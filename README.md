@@ -50,7 +50,7 @@ The repository is **public**. Never commit exported logs, real results, product 
    Make the region small enough to sit fully inside the liquid. If the result says "region not uniform", the box covers an edge, text or a reflection.
 
    For a **Bowie & Dick sheet** (with **Auto** ticked, the default):
-   - Lay the sheet flat on a table, alone in view, and tap **Capture**. Nothing is photographed yet: the tool waits.
+   - Lay the sheet flat on a table, alone in view. Scanning starts by itself as soon as the camera is started (and again after *Refă fotografia*); **Fotografiază** starts another scan. Nothing is photographed until the conditions below are met.
    - Follow the message on the preview: *Looking for the striped pattern* → *Move back / Move closer* → *Hold the phone flatter* → *Hold still*. The outline around the pattern is yellow while waiting and green when everything is right.
    - When the whole pattern is inside the dashed frame, the phone is within 20° of flat and has been still for about half a second, the tool takes the photo, selects the pattern and shows the result. Tap **Cancel** to stop waiting.
    - The overlay shows the selected area and the areas analysed: green = OK, red = pink left, orange = lighter or fainter area, grey = not enough stripes. **Check that the blue outline follows the edge of the pattern** before saving.
@@ -101,6 +101,8 @@ The selected pattern is split into a 5 × 5 grid of areas.
    - **Fail** if pink is left (≥ 10% of stripes overall, or ≥ 20% in any area), darkness differs clearly between areas (ΔL* ≥ 20) *and* the lightest area is no longer black (L* > 52), e.g. a lighter centre, stripes are clearly not dark, or an area has far fewer stripe pixels than the rest (stripes faded there).
    - **Pass** only if there is almost no pink (≤ 2% overall, ≤ 5% in any area), the stripes are dark (median L* ≤ 45), even the lightest area is still black (L* ≤ 52), areas differ by at most 25, and stripe density is even. Small differences between "black" and "slightly less black" areas do not block a pass.
    - Anything in between, glare, or a selection with too few stripes → **uncertain**.
+
+**Threshold freeze (decided 2026-11-19):** the pass limits are not to be loosened further until readings from a real failed sheet (from a faulty cycle, not just an unprocessed pink sheet) have been logged and reviewed.
 
 These starting values come from synthetic sheets and the manufacturer's colour-change scheme image. They must be checked against real processed sheets.
 

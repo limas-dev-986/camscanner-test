@@ -4,7 +4,7 @@
   const C = window.Colour;
   const D = window.Detect;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-19.8';
+  const BUILD = '2026-11-19.9';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -127,6 +127,8 @@
     await listCameras();
     updateLockAvailability();
     await refreshCapabilities();
+    // Sheets with "Automat" ticked: scanning starts as soon as the camera runs (no extra tap)
+    if (state.product.autoRegion && $('autoCapture').checked) startAuto();
   }
 
   function stopCamera() {
@@ -887,19 +889,23 @@
 
   $('selProduct').innerHTML = PRODUCTS.map((p) => '<option value="' + escapeHtml(p.id) + '">' + escapeHtml(p.label) + '</option>').join('');
   $('selProduct').addEventListener('change', (e) => setProduct(e.target.value));
-  $('btnStart').addEventListener('click', () => startCamera());
+  $('btnStart').addEventListener('click', () => { hookOrientation(); startCamera(); }); // sensor permission (iOS) needs the tap itself
   $('selCamera').addEventListener('change', (e) => startCamera(e.target.value));
   $('lockExposure').addEventListener('change', (e) => setLock('exposure', e.target.checked));
   $('lockWB').addEventListener('change', (e) => setLock('wb', e.target.checked));
   $('lockFocus').addEventListener('change', (e) => setLock('focus', e.target.checked));
   $('torch').addEventListener('change', (e) => setLock('torch', e.target.checked));
   $('btnCapture').addEventListener('click', onCaptureClick);
+  $('autoCapture').addEventListener('change', (e) => { if (!e.target.checked) stopAuto(); else if (state.track && state.product.autoRegion && !state.auto.active) startAuto(); });
   $('btnAutoRoi').addEventListener('click', autoRegion);
   frameCanvas.addEventListener('click', onFrameTap);
   $('roiSize').addEventListener('input', () => { redraw(); if (state.roiIndicator && state.roiWhite) measure(); });
   $('btnSkipWhite').addEventListener('click', () => { state.roiWhite = 'skipped'; redraw(); measure(); });
   $('btnResetRoi').addEventListener('click', resetRegions);
-  $('btnRetake').addEventListener('click', () => { $('roiSection').classList.add('hidden'); $('resultSection').classList.add('hidden'); $('camSection').scrollIntoView({ behavior: 'smooth' }); });
+  $('btnRetake').addEventListener('click', () => {
+    $('roiSection').classList.add('hidden'); $('resultSection').classList.add('hidden'); $('camSection').scrollIntoView({ behavior: 'smooth' });
+    if (state.track && state.product.autoRegion && $('autoCapture').checked && !state.auto.active) startAuto();
+  });
   $('btnSaveLog').addEventListener('click', saveLog);
   $('btnRefPurple').addEventListener('click', () => saveRef('purple'));
   $('btnRefYellow').addEventListener('click', () => saveRef('yellow'));

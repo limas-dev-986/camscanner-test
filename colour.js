@@ -256,6 +256,9 @@
   }
 
   // ---------- Sheet analysis (Bowie & Dick: pink stripes -> uniformly black) ----------
+  // DECISION 2026-11-19 (project owner): do NOT loosen the pass limits below (passInkL, passWorstCellL,
+  // passSpreadL, passPinkFrac, passCellPinkFrac, maxClippedFrac) until readings from a REAL failed
+  // Bowie & Dick sheet (faulty cycle: greyish / lighter centre / pink left) have been logged and reviewed.
   const SHEET_DEFAULTS = {
     insetFrac: 0.04,        // ignore this share of the selected rectangle at each edge
     grid: 5,                // grid x grid cells
