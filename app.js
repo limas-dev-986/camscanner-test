@@ -3,7 +3,7 @@
   'use strict';
   const C = window.Colour;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-19.4';
+  const BUILD = '2026-11-19.5';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -15,7 +15,7 @@
       try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (e) { return false; }
     },
   };
-  const K = { log: 'bi-test-log', refs: 'bi-test-refs', thr: 'bi-test-thresholds-v2', thrOld: 'bi-test-thresholds', session: 'bi-test-session' };
+  const K = { log: 'bi-test-log', refs: 'bi-test-refs', thr: 'bi-test-thresholds-v3', thrOld: 'bi-test-thresholds', session: 'bi-test-session' };
 
   const DEFAULTS_BY_METHOD = { vial: C.DEFAULT_THRESHOLDS, sheet: C.SHEET_DEFAULTS };
 
@@ -23,6 +23,8 @@
     const saved = store.get(K.thr, null) || {};
     const old = store.get(K.thrOld, null); // build .1 stored vial thresholds flat
     if (old && !saved['bi-vial']) saved['bi-vial'] = old;
+    const v2 = store.get('bi-test-thresholds-v2', null); // keep edited vial values; sheet values reset to new defaults (build .5)
+    if (v2 && v2['bi-vial'] && !saved['bi-vial']) saved['bi-vial'] = v2['bi-vial'];
     const out = {};
     PRODUCTS.forEach((p) => { out[p.id] = Object.assign({}, DEFAULTS_BY_METHOD[p.method], saved[p.id] || {}); });
     return out;
@@ -259,14 +261,12 @@
       }
       if (r && r.cells) {
         const t = thr();
-        const meds = r.cells.filter((x) => x.medianL !== undefined).map((x) => x.medianL);
-        const darkest = meds.length ? Math.min.apply(null, meds) : 0;
         const typical = medianDensity(r);
         r.cells.forEach((c) => {
           let colour = '#00c853';
           if (c.pinkFrac === undefined) colour = '#9e9e9e';
           else if (c.pinkFrac > t.passCellPinkFrac) colour = '#ff1744';
-          else if (c.medianL - darkest > t.passSpreadL) colour = '#ff9100';
+          else if (c.medianL > t.passWorstCellL) colour = '#ff9100';
           if (colour !== '#ff1744' && c.inkDensity !== undefined && typical > 0 && c.inkDensity / typical < t.passInkRatio) colour = '#ff9100';
           ctx.lineWidth = Math.max(1, lw / 2); ctx.strokeStyle = colour;
           ctx.strokeRect(c.box[0] + lw, c.box[1] + lw, c.box[2] - c.box[0] - 2 * lw, c.box[3] - c.box[1] - 2 * lw);
@@ -408,6 +408,7 @@
         ['Stripe pixels', pct(m.inkFrac) + ' of the area'],
         ['Pink share of stripes (whole / worst area)', pct(m.pinkFrac) + ' / ' + pct(m.maxCellPink)],
         ['Stripe darkness, median L* (0 = black)', fmt(m.medianInkL)],
+        ['Darkest / lightest area L*', fmt(m.bestCellL) + ' / ' + fmt(m.worstCellL)],
         ['Darkness difference between areas (ΔL*)', fmt(m.spreadL)],
         ['Weakest stripe density vs typical', pct(m.minInkRatio)],
         ['Glare', pct(m.clippedFrac)],
@@ -510,6 +511,8 @@
       sheet_maxCellPinkPct: round(m.maxCellPink * 100, 2),
       sheet_medianInkL: round(m.medianInkL),
       sheet_spreadL: round(m.spreadL),
+      sheet_bestCellL: round(m.bestCellL),
+      sheet_worstCellL: round(m.worstCellL),
       sheet_minInkRatioPct: round(m.minInkRatio * 100, 1),
       sheet_glarePct: round(m.clippedFrac * 100, 1),
       sheet_cellsUsed: m.cellsUsed + '/' + m.cellsTotal,
@@ -622,9 +625,9 @@
     minInkFrac: 'Min stripe share of area', minInkPerCell: 'Min stripe pixels per area',
     pinkChroma: 'Pink: min chroma', pinkHueMin: 'Pink hue from (°)', pinkHueMax: 'Pink hue to (°)',
     passPinkFrac: 'Pass: max pink share (whole)', passCellPinkFrac: 'Pass: max pink share (any area)',
-    passInkL: 'Pass: max stripe L*', passSpreadL: 'Pass: max ΔL* between areas', passInkRatio: 'Pass: min stripe density ratio',
+    passInkL: 'Pass: max median stripe L*', passWorstCellL: 'Pass: max L* of lightest area', passInkRatio: 'Pass: min stripe density ratio',
     failPinkFrac: 'Fail: pink share (whole) from', failCellPinkFrac: 'Fail: pink share (any area) from',
-    failInkL: 'Fail: stripe L* from', failSpreadL: 'Fail: ΔL* between areas from', failInkRatio: 'Fail: stripe density ratio below',
+    failInkL: 'Fail: stripe L* from', failSpreadL: 'Fail: ΔL* between areas from (if lightest area not black)', failInkRatio: 'Fail: stripe density ratio below',
   };
   function renderThresholds() {
     const t = thr();

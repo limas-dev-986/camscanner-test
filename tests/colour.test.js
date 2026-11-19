@@ -91,6 +91,8 @@ sheetCase('pink patch in centre', sheet(centre([235, 60, 150], [22, 22, 24]), WH
 sheetCase('uniform black, uneven lighting', sheet(BLACK, WHITE, (x) => 0.55 + 0.45 * x), 'pass');
 sheetCase('uniform black, warm light', sheet(() => [30, 24, 14], () => [245, 222, 170]), 'pass');
 sheetCase('pink, warm light', sheet(() => [250, 70, 90], () => [245, 222, 170]), 'fail');
+sheetCase('black, one area slightly less black', sheet(centre([70, 70, 72], [22, 22, 24]), WHITE), 'pass');
+sheetCase('black, grey centre (L* ~50)', sheet(centre([110, 110, 112], [22, 22, 24]), WHITE), 'fail');
 sheetCase('uniform dark grey', sheet(() => [95, 95, 95], WHITE), 'uncertain');
 const blank = new Uint8ClampedArray(100 * 100 * 4).fill(235);
 check('sheet: blank paper -> uncertain', C.analyseSheet(blank, 100, 100, { x0: 0, y0: 0, x1: 100, y1: 100 }).cls === 'uncertain');

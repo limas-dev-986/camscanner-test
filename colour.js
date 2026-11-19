@@ -268,11 +268,11 @@
     passPinkFrac: 0.02,     // pass: pink share of stripe pixels, whole sheet
     passCellPinkFrac: 0.05, // pass: pink share in the worst cell
     passInkL: 38,           // pass: median stripe darkness (relative L*), lower = blacker
-    passSpreadL: 12,        // pass: max difference in stripe darkness between cells
+    passWorstCellL: 48,     // pass: the lightest area's stripe darkness must still be at or below this (black enough)
     failPinkFrac: 0.10,     // fail: pink share, whole sheet
     failCellPinkFrac: 0.20, // fail: pink share in any cell
     failInkL: 60,           // fail: stripes clearly not dark
-    failSpreadL: 20,        // fail: clearly uneven darkening (e.g. lighter centre)
+    failSpreadL: 20,        // fail: clearly uneven darkening (e.g. lighter centre), when the lightest area is not black
     passInkRatio: 0.6,      // pass: every cell has at least this share of the typical stripe density
     failInkRatio: 0.35,     // fail: a cell with less stripe density than this = faint / unchanged area
     maxClippedFrac: 0.15,   // glare
@@ -380,7 +380,9 @@
     cells.forEach((c) => { delete c.inkL; });
     const meds = used.map((c) => c.medianL);
     const medianInkL = meds.length ? median(meds) : null;
-    const spreadL = meds.length ? Math.max.apply(null, meds) - Math.min.apply(null, meds) : null;
+    const worstCellL = meds.length ? Math.max.apply(null, meds) : null;
+    const bestCellL = meds.length ? Math.min.apply(null, meds) : null;
+    const spreadL = meds.length ? worstCellL - bestCellL : null;
     const maxCellPink = used.length ? Math.max.apply(null, used.map((c) => c.pinkFrac)) : null;
     const clippedFrac = total ? clipped / total : 0;
     // Stripe density per cell vs. the typical cell: catches areas where stripes stayed too light to count
@@ -389,7 +391,7 @@
     const minInkRatio = typicalDensity > 0 ? Math.min.apply(null, dens) / typicalDensity : 0;
     const paperLab = linRgbToLab(paperLin);
 
-    const metrics = { inkFrac, pinkFrac, minInkRatio, maxCellPink, medianInkL, spreadL, clippedFrac, cellsUsed: used.length, cellsTotal: G * G, paperLin, paperLab, step };
+    const metrics = { inkFrac, pinkFrac, minInkRatio, maxCellPink, medianInkL, spreadL, worstCellL, bestCellL, clippedFrac, cellsUsed: used.length, cellsTotal: G * G, paperLin, paperLab, step };
     const reasons = [];
     const res = (cls) => ({ cls, reasons, metrics, cells, rect: { x0, y0, x1, y1 } });
 
@@ -400,14 +402,15 @@
     // Fail checks first (fail-safe direction)
     if (pinkFrac >= t.failPinkFrac) reasons.push('pink remaining (' + Math.round(pinkFrac * 100) + '% of stripes)');
     else if (maxCellPink >= t.failCellPinkFrac) reasons.push('pink remaining in part of the sheet (worst area ' + Math.round(maxCellPink * 100) + '%)');
-    if (spreadL >= t.failSpreadL) reasons.push('uneven darkening between areas (ΔL* ' + spreadL.toFixed(0) + ')');
+    // Uneven darkening only fails if the lightest area is not black (black vs. slightly less black is fine)
+    if (spreadL >= t.failSpreadL && worstCellL > t.passWorstCellL) reasons.push('uneven darkening: lightest area L* ' + worstCellL.toFixed(0) + ' (ΔL* ' + spreadL.toFixed(0) + ')');
     if (medianInkL >= t.failInkL) reasons.push('stripes not dark (L* ' + medianInkL.toFixed(0) + ')');
     if (minInkRatio < t.failInkRatio) reasons.push('stripes faint or missing in part of the sheet');
     if (reasons.length) return res('fail');
 
     if (clippedFrac > t.maxClippedFrac) reasons.push('glare on the sheet');
     if (pinkFrac > t.passPinkFrac || maxCellPink > t.passCellPinkFrac) reasons.push('some pink detected');
-    if (spreadL > t.passSpreadL) reasons.push('darkening slightly uneven');
+    if (worstCellL > t.passWorstCellL) reasons.push('an area is not fully black (L* ' + worstCellL.toFixed(0) + ')');
     if (medianInkL > t.passInkL) reasons.push('stripes not fully black');
     if (minInkRatio < t.passInkRatio) reasons.push('stripe density uneven');
     if (reasons.length) return res('uncertain');
