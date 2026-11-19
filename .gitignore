@@ -1,0 +1,5 @@
+# Never commit exported test results (public repo)
+*.csv
+*.json
+*.y4m
+.DS_Store

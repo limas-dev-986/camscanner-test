@@ -1,13 +1,211 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Camera colour test</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Indicator colour test</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --fg:#1b1b1f; --muted:#5d5d66; --line:#d9d9de; --bg:#f6f6f8; --card:#fff;
+          --ok:#1d7a3e; --bad:#b3261e; --warn:#8a5a00; --accent:#4b3bbf; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--fg); background:var(--bg); }
+  .banner { position:sticky; top:0; z-index:10; background:var(--bad); color:#fff; text-align:center; font-weight:700; padding:8px 12px; }
+  main { max-width:760px; margin:0 auto; padding:12px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; margin:12px 0; }
+  h1 { font-size:20px; margin:8px 0 0; }
+  h2 { font-size:16px; margin:0 0 8px; }
+  .muted { color:var(--muted); font-size:13px; }
+  button, select, input[type=text], input[type=number] { font:inherit; border-radius:8px; border:1px solid var(--line); padding:9px 12px; background:#fff; color:var(--fg); }
+  button { cursor:pointer; background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+  button.secondary { background:#fff; color:var(--accent); }
+  button.danger { background:#fff; color:var(--bad); border-color:var(--bad); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0; }
+  .row label { display:flex; gap:6px; align-items:center; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .grid label { display:flex; flex-direction:column; font-size:13px; color:var(--muted); gap:3px; }
+  .grid input, .grid select { width:100%; }
+  video, canvas.frame { width:100%; display:block; background:#000; border-radius:8px; touch-action:manipulation; }
+  .step { font-weight:700; padding:8px 10px; border-radius:8px; background:#efedfb; margin:8px 0; }
+  .warn { color:var(--warn); font-weight:600; }
+  .result { border-radius:10px; padding:16px; font-size:20px; font-weight:800; text-align:center; color:#fff; margin:8px 0; }
+  .result.no_growth { background:var(--ok); }
+  .result.growth { background:var(--bad); }
+  .result.uncertain { background:var(--warn); }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  td, th { border-bottom:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; }
+  pre { white-space:pre-wrap; word-break:break-word; font-size:12px; background:#f1f1f4; padding:8px; border-radius:8px; max-height:340px; overflow:auto; }
+  .swatch { display:inline-block; width:18px; height:18px; border-radius:4px; border:1px solid #0003; vertical-align:middle; }
+  .hidden { display:none !important; }
+  details > summary { cursor:pointer; font-weight:600; }
+  .scroll { overflow-x:auto; }
+</style>
 </head>
-<body style="font-family: sans-serif; padding: 1rem;">
-  <p><strong>Test tool only. Not for sterilisation decisions.</strong></p>
-  <h1>Hosting works</h1>
-  <p>Placeholder page. The camera test will replace this.</p>
+<body>
+<div class="banner">Test tool only. Not for sterilisation decisions.</div>
+<main>
+  <h1>Indicator colour test: biological indicators</h1>
+  <p class="muted">Feasibility test. Everything runs on this phone: no uploads, no tracking. Results stay on the device until you export them.</p>
+
+  <!-- 1. Camera -->
+  <section id="camSection">
+    <h2>1. Camera</h2>
+    <div class="row">
+      <button id="btnStart">Start camera</button>
+      <select id="selCamera" class="hidden" aria-label="Camera"></select>
+    </div>
+    <p id="camStatus" class="muted"></p>
+    <video id="video" playsinline muted autoplay class="hidden"></video>
+    <div id="camControls" class="hidden">
+      <div class="row">
+        <label><input type="checkbox" id="lockExposure"> Lock exposure</label>
+        <label><input type="checkbox" id="lockWB"> Lock white balance</label>
+        <label><input type="checkbox" id="lockFocus"> Lock focus</label>
+        <label><input type="checkbox" id="torch"> Torch</label>
+      </div>
+      <p id="lockStatus" class="muted"></p>
+      <div class="row"><button id="btnCapture">Capture</button></div>
+    </div>
+  </section>
+
+  <!-- 2. Regions -->
+  <section id="roiSection" class="hidden">
+    <h2>2. Select regions</h2>
+    <div id="stepText" class="step"></div>
+    <canvas id="frame" class="frame"></canvas>
+    <div class="row">
+      <label>Region size <input type="range" id="roiSize" min="1" max="12" step="0.5" value="4"> <span id="roiSizeVal"></span></label>
+    </div>
+    <div class="row">
+      <button id="btnSkipWhite" class="secondary">Skip white reference</button>
+      <button id="btnResetRoi" class="secondary">Reset regions</button>
+      <button id="btnRetake" class="secondary">Retake</button>
+    </div>
+  </section>
+
+  <!-- 3. Result -->
+  <section id="resultSection" class="hidden">
+    <h2>3. Result</h2>
+    <div id="resultBox" class="result"></div>
+    <p id="resultReasons" class="muted"></p>
+    <div class="scroll"><table id="resultTable"></table></div>
+
+    <h2 style="margin-top:14px">Tester input</h2>
+    <div class="grid">
+      <label>Expected result
+        <select id="expected">
+          <option value="">— select —</option>
+          <option value="no_growth">Purple (no growth)</option>
+          <option value="growth">Yellow / green (growth)</option>
+          <option value="unknown">Unknown</option>
+        </select>
+      </label>
+      <label>Lighting
+        <select id="lighting">
+          <option value="">— select —</option>
+          <option>Cool fluorescent (CSSD)</option>
+          <option>Warm / LED</option>
+          <option>Daylight near window</option>
+          <option>Dim</option>
+          <option>Phone torch only</option>
+          <option>Other</option>
+        </select>
+      </label>
+      <label>Angle / distance
+        <select id="angle">
+          <option>Recommended position</option>
+          <option>Tilted ~20°</option>
+          <option>Other</option>
+        </select>
+      </label>
+      <label>Sample ID (e.g. P1, Y2)
+        <input type="text" id="sampleId" maxlength="20" autocomplete="off">
+      </label>
+    </div>
+    <div class="grid" style="margin-top:8px">
+      <label>Note (no names or patient data)
+        <input type="text" id="note" maxlength="120" autocomplete="off">
+      </label>
+    </div>
+    <div class="row">
+      <button id="btnSaveLog">Save to log</button>
+      <span id="saveStatus" class="muted"></span>
+    </div>
+    <details>
+      <summary>Calibration: save this reading as a reference</summary>
+      <p class="muted">Use only samples whose state you know. Save several of each, ideally under the lighting you test in.</p>
+      <div class="row">
+        <button id="btnRefPurple" class="secondary">Save as PURPLE reference</button>
+        <button id="btnRefYellow" class="secondary">Save as YELLOW reference</button>
+      </div>
+    </details>
+  </section>
+
+  <!-- 4. Session setup -->
+  <section>
+    <h2>4. Session</h2>
+    <div class="grid">
+      <label>Device label (e.g. "Phone A – budget Android")
+        <input type="text" id="deviceLabel" maxlength="60" autocomplete="off">
+      </label>
+      <label>Tester initials / session code
+        <input type="text" id="sessionCode" maxlength="20" autocomplete="off">
+      </label>
+    </div>
+    <p class="muted">Do not type full names. The device label is how results from different phones are compared.</p>
+  </section>
+
+  <!-- 5. Calibration status -->
+  <section>
+    <h2>5. Calibration references</h2>
+    <div class="scroll"><table id="refTable"></table></div>
+    <div class="row">
+      <button id="btnClearRefs" class="danger">Clear references</button>
+    </div>
+  </section>
+
+  <!-- 6. Log -->
+  <section>
+    <h2>6. Test log</h2>
+    <p id="logSummary" class="muted"></p>
+    <div class="scroll"><table id="logTable"></table></div>
+    <div class="row">
+      <button id="btnExportCsv">Export CSV</button>
+      <button id="btnExportJson">Export JSON</button>
+      <button id="btnClearLog" class="danger">Clear log</button>
+    </div>
+  </section>
+
+  <!-- 7. Settings -->
+  <section>
+    <details>
+      <summary>7. Classification thresholds</summary>
+      <p class="muted">Starting values. Change them only between sessions, and note the change in the results template. Saved on this device.</p>
+      <div id="thresholdGrid" class="grid"></div>
+      <div class="row"><button id="btnResetThresholds" class="secondary">Reset to defaults</button></div>
+    </details>
+  </section>
+
+  <!-- 8. Capability report -->
+  <section>
+    <h2>8. Capability report</h2>
+    <p class="muted">What this phone and browser expose. Start the camera first for the full report.</p>
+    <div class="row">
+      <button id="btnCapRefresh" class="secondary">Refresh</button>
+      <button id="btnCapCopy" class="secondary">Copy</button>
+      <button id="btnCapExport" class="secondary">Export JSON</button>
+    </div>
+    <div class="scroll"><table id="capSummary"></table></div>
+    <details><summary>Full report</summary><pre id="capReport"></pre></details>
+  </section>
+
+  <p class="muted">Build <span id="buildId"></span></p>
+</main>
+<script src="colour.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
