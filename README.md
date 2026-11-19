@@ -98,8 +98,8 @@ The selected pattern is split into a 5 × 5 grid of areas.
 2. **Pink:** stripe pixels are colour-corrected using the sheet's paper white, then counted as pink if they have enough chroma and a magenta/pink/red hue.
 3. **Per area:** pink share, median stripe darkness (relative L*, 0 = black), and stripe density.
 4. Rules:
-   - **Fail** if pink is left (≥ 10% of stripes overall, or ≥ 20% in any area), darkness differs clearly between areas (ΔL* ≥ 20) *and* the lightest area is no longer black (L* > 48), e.g. a lighter centre, stripes are clearly not dark, or an area has far fewer stripe pixels than the rest (stripes faded there).
-   - **Pass** only if there is almost no pink (≤ 2% overall, ≤ 5% in any area), the stripes are dark (median L* ≤ 38), even the lightest area is still black (L* ≤ 48), and stripe density is even. Small differences between "black" and "slightly less black" areas do not block a pass.
+   - **Fail** if pink is left (≥ 10% of stripes overall, or ≥ 20% in any area), darkness differs clearly between areas (ΔL* ≥ 20) *and* the lightest area is no longer black (L* > 52), e.g. a lighter centre, stripes are clearly not dark, or an area has far fewer stripe pixels than the rest (stripes faded there).
+   - **Pass** only if there is almost no pink (≤ 2% overall, ≤ 5% in any area), the stripes are dark (median L* ≤ 45), even the lightest area is still black (L* ≤ 52), areas differ by at most 25, and stripe density is even. Small differences between "black" and "slightly less black" areas do not block a pass.
    - Anything in between, glare, or a selection with too few stripes → **uncertain**.
 
 These starting values come from synthetic sheets and the manufacturer's colour-change scheme image. They must be checked against real processed sheets.

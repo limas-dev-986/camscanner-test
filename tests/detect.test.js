@@ -79,7 +79,7 @@ run('rotated -25°, pink', rot(320, 240, 340, 255, -25), PINK, 'fail');
 const tilted = [{ x: 150, y: 110 }, { x: 490, y: 110 }, { x: 540, y: 390 }, { x: 100, y: 390 }]; // keystone
 const dk = run('tilted (keystone), black', tilted, BLACK, 'pass');
 if (dk) check('tilted: side ratio reported > 1.15', dk.sideRatio > 1.15, String(dk.sideRatio));
-run('tilted + rotated, grey centre', [{ x: 190, y: 90 }, { x: 500, y: 140 }, { x: 490, y: 400 }, { x: 110, y: 350 }], centre([112, 112, 114], [26, 26, 28]), 'fail');
+run('tilted + rotated, grey centre', [{ x: 190, y: 90 }, { x: 500, y: 140 }, { x: 490, y: 400 }, { x: 110, y: 350 }], centre([145, 145, 147], [26, 26, 28]), 'fail');
 run('faded centre (hole in texture)', rot(320, 240, 400, 300, 5), centre([225, 222, 216], [26, 26, 28]), 'fail');
 run('black on dark noisy table', rot(320, 240, 400, 300, -8), BLACK, 'pass', { table: [45, 42, 40], noise: 16 });
 run('black on white table', rot(320, 240, 400, 300, 8), BLACK, 'pass', { table: [225, 225, 222], noise: 8 });

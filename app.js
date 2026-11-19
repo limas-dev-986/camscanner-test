@@ -4,7 +4,7 @@
   const C = window.Colour;
   const D = window.Detect;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-19.7';
+  const BUILD = '2026-11-19.8';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -16,7 +16,7 @@
       try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (e) { return false; }
     },
   };
-  const K = { log: 'bi-test-log', refs: 'bi-test-refs', thr: 'bi-test-thresholds-v3', thrOld: 'bi-test-thresholds', session: 'bi-test-session' };
+  const K = { log: 'bi-test-log', refs: 'bi-test-refs', thr: 'bi-test-thresholds-v4', thrOld: 'bi-test-thresholds', session: 'bi-test-session' };
 
   const DEFAULTS_BY_METHOD = { vial: C.DEFAULT_THRESHOLDS, sheet: C.SHEET_DEFAULTS };
 
@@ -24,6 +24,8 @@
     const saved = store.get(K.thr, null) || {};
     const old = store.get(K.thrOld, null); // build .1 stored vial thresholds flat
     if (old && !saved['bi-vial']) saved['bi-vial'] = old;
+    const v3 = store.get('bi-test-thresholds-v3', null); // sheet values reset again in build .8
+    if (v3 && v3['bi-vial'] && !saved['bi-vial']) saved['bi-vial'] = v3['bi-vial'];
     const v2 = store.get('bi-test-thresholds-v2', null); // keep edited vial values; sheet values reset to new defaults (build .5)
     if (v2 && v2['bi-vial'] && !saved['bi-vial']) saved['bi-vial'] = v2['bi-vial'];
     const out = {};
@@ -769,7 +771,7 @@
     minInkFrac: 'Proporție minimă de dungi în zonă', minInkPerCell: 'Număr minim de pixeli de dungă pe zonă',
     pinkChroma: 'Roz: saturație minimă', pinkHueMin: 'Nuanță roz de la (°)', pinkHueMax: 'Nuanță roz până la (°)',
     passPinkFrac: 'Trecut: proporție maximă de roz (total)', passCellPinkFrac: 'Trecut: proporție maximă de roz (orice zonă)',
-    passInkL: 'Trecut: L* median maxim al dungilor', passWorstCellL: 'Trecut: L* maxim în zona cea mai deschisă', passInkRatio: 'Trecut: raport minim al densității dungilor',
+    passInkL: 'Trecut: L* median maxim al dungilor', passWorstCellL: 'Trecut: L* maxim în zona cea mai deschisă', passSpreadL: 'Trecut: ΔL* maxim între zone', passInkRatio: 'Trecut: raport minim al densității dungilor',
     failPinkFrac: 'Eșuat: proporție de roz (total) de la', failCellPinkFrac: 'Eșuat: proporție de roz (orice zonă) de la',
     maxTiltDeg: 'Fotografiere automată: înclinare maximă (°)', useTiltSensor: 'Fotografiere automată: folosește senzorul de mișcare (1/0)',
     maxSideRatio: 'Fotografiere automată: raport maxim între laturile opuse', minAreaFrac: 'Fotografiere automată: proporție minimă din cadru',

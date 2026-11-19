@@ -267,15 +267,16 @@
     pinkHueMax: 40,
     passPinkFrac: 0.02,     // pass: pink share of stripe pixels, whole sheet
     passCellPinkFrac: 0.05, // pass: pink share in the worst cell
-    passInkL: 38,           // pass: median stripe darkness (relative L*), lower = blacker
-    passWorstCellL: 48,     // pass: the lightest area's stripe darkness must still be at or below this (black enough)
+    passInkL: 45,           // pass: median stripe darkness (relative L*), lower = blacker
+    passSpreadL: 25,        // pass: max difference in stripe darkness between the darkest and the lightest area
+    passWorstCellL: 52,     // pass: the lightest area's stripe darkness must still be at or below this (black enough)
     failPinkFrac: 0.10,     // fail: pink share, whole sheet
     failCellPinkFrac: 0.20, // fail: pink share in any cell
     failInkL: 60,           // fail: stripes clearly not dark
     failSpreadL: 20,        // fail: clearly uneven darkening (e.g. lighter centre), when the lightest area is not black
     passInkRatio: 0.6,      // pass: every cell has at least this share of the typical stripe density
     failInkRatio: 0.35,     // fail: a cell with less stripe density than this = faint / unchanged area
-    maxClippedFrac: 0.15,   // glare
+    maxClippedFrac: 0.6,    // share of pure-white pixels allowed (overexposed paper alone is about half the sheet)
     // automatic capture / automatic region
     maxTiltDeg: 20,         // auto-capture: max phone tilt from flat (motion sensor; sheet lying on a table)
     useTiltSensor: 1,       // 1 = use the motion sensor when the phone has one, 0 = shape check only
@@ -325,14 +326,14 @@
         const i = (y * width + x) * 4;
         const r = data[i], g = data[i + 1], b = data[i + 2];
         total++;
-        if (r >= 250 && g >= 250 && b >= 250) { clipped++; continue; }
         const Y = 0.2126729 * LIN[r] + 0.7151522 * LIN[g] + 0.072175 * LIN[b];
         const c = Math.min(G - 1, Math.floor((y - y0) / ch)) * G + Math.min(G - 1, Math.floor((x - x0) / cw));
-        cellY[c].push(Y);
+        cellY[c].push(Y); // pure-white (overexposed) pixels still count as paper for the local white level
         allY.push(Y);
+        if (r >= 250 && g >= 250 && b >= 250) clipped++;
       }
     }
-    if (!allY.length) return { error: 'Zonă complet saturată (reflexii).' };
+    if (clipped === total) return { error: 'Zonă complet saturată (reflexii).' };
     allY.sort((a, b) => a - b);
     const paperYGlobal = percentile(allY, 0.9);
     const cellPaper = cellY.map((ys) => {
@@ -346,7 +347,6 @@
       for (let x = x0; x < x1; x += step) {
         const i = (y * width + x) * 4;
         const r = data[i], g = data[i + 1], b = data[i + 2];
-        if (r >= 250 && g >= 250 && b >= 250) continue;
         const Y = 0.2126729 * LIN[r] + 0.7151522 * LIN[g] + 0.072175 * LIN[b];
         if (Y >= paperYGlobal) { pr += LIN[r]; pg += LIN[g]; pb += LIN[b]; pn++; }
       }
@@ -357,16 +357,17 @@
     const cells = Array.from({ length: G * G }, (_, c) => ({
       col: c % G, row: Math.floor(c / G),
       box: [x0 + (c % G) * cw, y0 + Math.floor(c / G) * ch, x0 + ((c % G) + 1) * cw, y0 + (Math.floor(c / G) + 1) * ch],
-      n: 0, ink: 0, pink: 0, inkL: [],
+      n: 0, tot: 0, ink: 0, pink: 0, inkL: [],
     }));
     let ink = 0, pink = 0;
     for (let y = y0; y < y1; y += step) {
       for (let x = x0; x < x1; x += step) {
         const i = (y * width + x) * 4;
         const r = data[i], g = data[i + 1], b = data[i + 2];
-        if (r >= 250 && g >= 250 && b >= 250) continue;
         const c = Math.min(G - 1, Math.floor((y - y0) / ch)) * G + Math.min(G - 1, Math.floor((x - x0) / cw));
         const cell = cells[c];
+        cell.tot++;
+        if (r >= 250 && g >= 250 && b >= 250) continue;
         cell.n++;
         const Y = 0.2126729 * LIN[r] + 0.7151522 * LIN[g] + 0.072175 * LIN[b];
         const Lrel = yToL(Math.min(1, Y / cellPaper[c]));
@@ -380,7 +381,7 @@
     }
 
     const counted = total - clipped;
-    const inkFrac = counted ? ink / counted : 0;
+    const inkFrac = total ? ink / total : 0;
     const pinkFrac = ink ? pink / ink : 0;
     const used = cells.filter((c) => c.ink >= t.minInkPerCell);
     used.forEach((c) => { c.pinkFrac = c.pink / c.ink; c.medianL = median(c.inkL); });
@@ -393,7 +394,8 @@
     const maxCellPink = used.length ? Math.max.apply(null, used.map((c) => c.pinkFrac)) : null;
     const clippedFrac = total ? clipped / total : 0;
     // Stripe density per cell vs. the typical cell: catches areas where stripes stayed too light to count
-    const dens = cells.filter((c) => c.n >= 20).map((c) => { c.inkDensity = c.ink / c.n; return c.inkDensity; });
+    // Density counts pure-white pixels too: a reflection that hides stripes shows up as an area with too few stripes
+    const dens = cells.filter((c) => c.tot >= 20).map((c) => { c.inkDensity = c.ink / c.tot; return c.inkDensity; });
     const typicalDensity = dens.length ? median(dens) : 0;
     const minInkRatio = typicalDensity > 0 ? Math.min.apply(null, dens) / typicalDensity : 0;
     const paperLab = linRgbToLab(paperLin);
@@ -417,6 +419,7 @@
 
     if (clippedFrac > t.maxClippedFrac) reasons.push('reflexii pe test');
     if (pinkFrac > t.passPinkFrac || maxCellPink > t.passCellPinkFrac) reasons.push('s-a detectat puțin roz');
+    if (spreadL > t.passSpreadL) reasons.push('înnegrire neuniformă între zone (ΔL* ' + spreadL.toFixed(0) + ')');
     if (worstCellL > t.passWorstCellL) reasons.push('o zonă nu este complet neagră (L* ' + worstCellL.toFixed(0) + ')');
     if (medianInkL > t.passInkL) reasons.push('dungile nu sunt complet negre');
     if (minInkRatio < t.passInkRatio) reasons.push('densitate neuniformă a dungilor');
