@@ -42,7 +42,7 @@ The repository is **public**. Never commit exported logs, real results, product 
 3. **Start camera.** If the phone has several rear cameras, pick the main one in the drop-down.
 4. **Capability report (section 8):** export it once per phone + browser. It shows which camera controls the browser exposes.
 5. **Camera locks (optional):** lock exposure / white balance / focus where available. The test plan runs every condition both in automatic and in locked mode.
-6. **Position the vial** at a fixed distance (about 10–15 cm), with the liquid and the white part of the label both in view. Avoid reflections on the plastic.
+6. **Position the object** inside the dashed frame of the landscape preview. Only what the preview shows is captured. Vial: about 10–15 cm away, with the liquid and the white part of the label both in view (hold the vial horizontally if it does not fit); avoid reflections on the plastic.
 7. **Capture**, then select the region. For a **vial**, tap:
    - the **liquid** at the bottom of the vial. **Never the cap: the cap is always purple, so tapping it gives a false "no growth".**
    - the **white area of the label** (white reference), or *Skip white reference*.

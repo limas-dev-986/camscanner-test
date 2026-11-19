@@ -3,7 +3,7 @@
   'use strict';
   const C = window.Colour;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-19.3';
+  const BUILD = '2026-11-19.4';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -100,7 +100,7 @@
     }
     state.track = state.stream.getVideoTracks()[0];
     video.srcObject = state.stream;
-    video.classList.remove('hidden');
+    $('camWrap').classList.remove('hidden');
     $('camControls').classList.remove('hidden');
     try { await video.play(); } catch (e) { /* ignore */ }
     await new Promise((res) => { if (video.videoWidth) res(); else video.onloadedmetadata = () => res(); });
@@ -185,19 +185,25 @@
   // ======================================================================
   // Capture + regions
   // ======================================================================
+  // Capture keeps the same centre crop the landscape preview shows (object-fit: cover)
+  const CAPTURE_ASPECT = 4 / 3;
   function capture() {
     if (!video.videoWidth) return;
-    const w = video.videoWidth, h = video.videoHeight;
+    const vw = video.videoWidth, vh = video.videoHeight;
+    let sw = vw, sh = vh;
+    if (vw / vh > CAPTURE_ASPECT) sw = Math.round(vh * CAPTURE_ASPECT); else sh = Math.round(vw / CAPTURE_ASPECT);
+    const sx = Math.round((vw - sw) / 2), sy = Math.round((vh - sh) / 2);
+    const w = sw, h = sh;
     const off = document.createElement('canvas');
     off.width = w; off.height = h;
     const octx = off.getContext('2d', { willReadFrequently: true });
-    octx.drawImage(video, 0, 0, w, h);
+    octx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
     state.frameCanvas = off;
     state.frame = octx.getImageData(0, 0, w, h);
     state.captureMeta = {
       settings: trackSettings(),
       locks: Object.assign({}, state.locks),
-      width: w, height: h,
+      width: w, height: h, videoWidth: vw, videoHeight: vh,
       cameraLabel: state.track ? state.track.label : '',
     };
     frameCanvas.width = w; frameCanvas.height = h;
@@ -443,6 +449,7 @@
       {
         cameraLabel: state.captureMeta.cameraLabel,
         resolution: state.captureMeta.width + 'x' + state.captureMeta.height,
+        videoResolution: state.captureMeta.videoWidth + 'x' + state.captureMeta.videoHeight,
         lockExposure: state.captureMeta.locks.exposure,
         lockWhiteBalance: state.captureMeta.locks.wb,
         lockFocus: state.captureMeta.locks.focus,
