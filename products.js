@@ -28,7 +28,7 @@
       label: 'Test Bowie & Dick (roz → negru uniform)',
       method: 'sheet',
       messages: {
-        pass: 'Virare completă la negru - Test trecut',
+        pass: 'Virare completă - Test trecut',
         fail: 'Virare incompletă - Test eșuat!',
         uncertain: 'Rezultat incert - Repetați citirea',
       },
