@@ -104,5 +104,38 @@ const q = [{ x: 10, y: 20 }, { x: 300, y: 40 }, { x: 320, y: 260 }, { x: 0, y: 2
 const f = D.squareToQuad(q), g = D.quadToSquare(q), p = f(0.3, 0.7), b = g(p[0], p[1]);
 check('homography round trip', Math.abs(b[0] - 0.3) < 1e-9 && Math.abs(b[1] - 0.7) < 1e-9);
 
+// ---------- Indicator fields (three triangles) ----------
+function strip(colours, opts) {
+  const o = Object.assign({ w: 720, h: 540, rot: 0, table: [40, 38, 36] }, opts || {});
+  const d = new Uint8ClampedArray(o.w * o.h * 4), a = (o.rot * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+  const tri = [[-150, -50], [-185, 20], [-115, 20]]; // triangle centres in label coords (label 480 x 180, centred)
+  for (let y = 0; y < o.h; y++) for (let x = 0; x < o.w; x++) {
+    const dx = x - o.w / 2, dy = y - o.h / 2, u = dx * c + dy * s, v = -dx * s + dy * c;
+    let col = o.table;
+    if (Math.abs(u) < 240 && Math.abs(v) < 90) {
+      col = [238, 236, 232];
+      if (u > -60 && u < 200 && v > -70 && v < -30) col = [20, 60, 200];          // vivid logo: must be ignored
+      if (u > -60 && u < 20 && v > 0 && v < 70 && ((u + v) | 0) % 6 < 3) col = [20, 20, 20]; // code block
+      tri.forEach((t, i) => { const tx = u - t[0], ty = v - t[1]; if (ty > -30 && ty < 26 && Math.abs(tx) < (ty + 30) * 0.55) col = colours[i]; });
+    }
+    const nz = rnd() * 8, i = (y * o.w + x) * 4;
+    d[i] = col[0] + nz; d[i + 1] = col[1] + nz; d[i + 2] = col[2] + nz; d[i + 3] = 255;
+  }
+  return { data: d, w: o.w, h: o.h };
+}
+const TPK = [222, 178, 200], TBL = [176, 180, 205];
+[['three pink', [TPK, TPK, TPK], 0], ['three blue, rotated 20°', [TBL, TBL, TBL], 20], ['mixed, rotated -35°', [TPK, TBL, TPK], -35]].forEach(([name, cols, rot]) => {
+  const sc = strip(cols, { rot });
+  const r = D.detectPatches(sc.data, sc.w, sc.h);
+  check('fields: ' + name + ' -> three found', r.found && r.fields.length === 3 && !r.multiple && !r.touchesBorder, JSON.stringify(r).slice(0, 200));
+  if (r.found) {
+    const a = (rot * Math.PI) / 180, exp = [[-150, -50], [-185, 20], [-115, 20]].map(([u, v]) => [sc.w / 2 + u * Math.cos(a) - v * Math.sin(a), sc.h / 2 + u * Math.sin(a) + v * Math.cos(a)]);
+    const err = Math.max.apply(null, exp.map((e) => Math.min.apply(null, r.fields.map((f) => Math.hypot(f.x - e[0], f.y - e[1])))));
+    check('fields: ' + name + ' -> centres within 12 px (' + err.toFixed(1) + ')', err < 12);
+  }
+});
+const noTri = strip([[238, 236, 232], [238, 236, 232], [238, 236, 232]]);
+check('fields: label without triangles -> not found', !D.detectPatches(noTri.data, noTri.w, noTri.h).found);
+
 console.log(failed ? '\n' + failed + ' test(s) failed' : '\nall tests passed');
 process.exit(failed ? 1 : 0);

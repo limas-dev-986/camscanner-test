@@ -306,7 +306,101 @@
     return { data: out, width: W, height: H, map };
   }
 
-  const api = { detectPattern, rectify, squareToQuad, quadToSquare, convexHull, DEFAULTS };
+  // ---------------------------------------------------------------------------------------------
+  // Indicator fields: three pale coloured triangles (blue ... pink) arranged as a small pyramid
+  // ---------------------------------------------------------------------------------------------
+  const Col = typeof module !== 'undefined' && module.exports ? require('./colour.js') : root.Colour;
+  const PATCH_DETECT = {
+    workWidth: 360,
+    hueMin: 240, hueMax: 30,   // candidate colours: blue through violet to pink
+    cMin: 7, cMax: 45,         // pale colours only: vivid print (logos) is ignored
+    lMin: 40, lMax: 95,
+    minArea: 30,               // work px
+  };
+
+  /**
+   * Find three similar coloured fields at roughly equal distances from each other.
+   * Returns { found, fields: [{ x, y, side }] (image px; side = approximate width of a field),
+   *           touchesBorder, multiple } - fields sorted top to bottom, left to right.
+   */
+  function detectPatches(data, width, height, options) {
+    const o = Object.assign({}, PATCH_DETECT, options || {});
+    const s = Math.max(1, Math.ceil(width / o.workWidth));
+    const ww = Math.floor(width / s), wh = Math.floor(height / s), n = ww * wh;
+    if (ww < 40 || wh < 40) return { found: false, reason: 'image too small' };
+    // 1. downscale (box average, linear light)
+    const R = new Float32Array(n), G = new Float32Array(n), B = new Float32Array(n), Y = new Float32Array(n);
+    const inv = 1 / (s * s);
+    for (let y = 0; y < wh; y++) for (let x = 0; x < ww; x++) {
+      let r = 0, g = 0, b = 0;
+      for (let dy = 0; dy < s; dy++) {
+        let i = ((y * s + dy) * width + x * s) * 4;
+        for (let dx = 0; dx < s; dx++, i += 4) { r += Col.srgbToLinear(data[i]); g += Col.srgbToLinear(data[i + 1]); b += Col.srgbToLinear(data[i + 2]); }
+      }
+      const k = y * ww + x;
+      R[k] = r * inv; G[k] = g * inv; B[k] = b * inv;
+      Y[k] = 0.2126729 * R[k] + 0.7151522 * G[k] + 0.072175 * B[k];
+    }
+    // 2. white = brightest 5% (the label paper)
+    const cut = Float32Array.from(Y).sort()[Math.floor(n * 0.95)];
+    let wr = 0, wg = 0, wb = 0, wn = 0;
+    for (let k = 0; k < n; k++) if (Y[k] >= cut) { wr += R[k]; wg += G[k]; wb += B[k]; wn++; }
+    if (!wn || wr / wn < 0.02) return { found: false, reason: 'too dark' };
+    const white = [wr / wn, wg / wn, wb / wn];
+    // 3. candidate mask
+    const mask = new Uint8Array(n);
+    for (let k = 0; k < n; k++) {
+      if (Y[k] > cut * 0.97 || Y[k] < cut * 0.1) continue; // paper itself / very dark
+      const lch = Col.labToLch(Col.linRgbToLab([R[k] * 0.85 / white[0], G[k] * 0.85 / white[1], B[k] * 0.85 / white[2]]));
+      if (lch.C >= o.cMin && lch.C <= o.cMax && lch.L >= o.lMin && lch.L <= o.lMax && Col.hueIn(lch.h, o.hueMin, o.hueMax)) mask[k] = 1;
+    }
+    // 4. connected components (8-neighbour)
+    const label = new Int32Array(n), blobs = [], stack = [];
+    for (let i = 0; i < n; i++) {
+      if (!mask[i] || label[i]) continue;
+      const id = blobs.length + 1;
+      let area = 0, sx = 0, sy = 0, x0 = ww, y0 = wh, x1 = 0, y1 = 0;
+      stack.push(i); label[i] = id;
+      while (stack.length) {
+        const k = stack.pop(), x = k % ww, y = (k - x) / ww;
+        area++; sx += x; sy += y;
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= ww || ny >= wh) continue;
+          const q = ny * ww + nx;
+          if (mask[q] && !label[q]) { label[q] = id; stack.push(q); }
+        }
+      }
+      const bw = x1 - x0 + 1, bh = y1 - y0 + 1, fill = area / (bw * bh);
+      if (area < o.minArea || bw > ww * 0.25 || bh > wh * 0.3) { blobs.push(null); continue; }
+      if (bw / bh < 0.5 || bw / bh > 2 || fill < 0.3 || fill > 0.92) { blobs.push(null); continue; }
+      blobs.push({ x: sx / area, y: sy / area, area, side: Math.sqrt(2 * area), edge: x0 <= 1 || y0 <= 1 || x1 >= ww - 2 || y1 >= wh - 2 });
+    }
+    const cand = blobs.filter((b) => b).sort((a, b) => b.area - a.area).slice(0, 24);
+    // 5. best triple: similar size, roughly equal distances, close together
+    const triples = [];
+    for (let i = 0; i < cand.length; i++) for (let j = i + 1; j < cand.length; j++) for (let k = j + 1; k < cand.length; k++) {
+      const t = [cand[i], cand[j], cand[k]];
+      const areas = t.map((b) => b.area), ar = Math.max.apply(null, areas) / Math.min.apply(null, areas);
+      if (ar > 2.5) continue;
+      const d = [dist(t[0], t[1]), dist(t[0], t[2]), dist(t[1], t[2])];
+      const dr = Math.max.apply(null, d) / Math.min.apply(null, d);
+      if (dr > 1.7) continue;
+      const side = (t[0].side + t[1].side + t[2].side) / 3, rel = (d[0] + d[1] + d[2]) / 3 / side;
+      if (rel < 0.85 || rel > 2.6) continue;
+      triples.push({ t, score: dr - 1 + 0.5 * (ar - 1) });
+    }
+    if (!triples.length) return { found: false, reason: 'no fields' };
+    triples.sort((a, b) => a.score - b.score);
+    const best = triples[0];
+    const multiple = triples.some((x) => x.t.every((b) => best.t.indexOf(b) === -1));
+    const fields = best.t.slice().sort((a, b) => (Math.abs(a.y - b.y) > best.t[0].side * 0.4 ? a.y - b.y : a.x - b.x))
+      .map((b) => ({ x: (b.x + 0.5) * s, y: (b.y + 0.5) * s, side: b.side * s }));
+    return { found: true, fields, touchesBorder: best.t.some((b) => b.edge), multiple };
+  }
+
+  const api = { detectPattern, detectPatches, rectify, squareToQuad, quadToSquare, convexHull, DEFAULTS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Detect = api;
 })(typeof window !== 'undefined' ? window : this);

@@ -14,7 +14,7 @@
  *   messages   text shown for pass / fail / uncertain
  *   expected   labels for the tester's "expected result" list
  *   calibration  true = purple/yellow reference buttons are shown (vial method only for now)
- *   autoRegion   true = automatic capture and automatic region (sheet method only for now)
+ *   autoRegion   true = automatic capture and automatic region (sheet and patches methods)
  */
 (function (root) {
   'use strict';
@@ -57,7 +57,7 @@
       method: 'patches',
       rules: Object.assign({}, C.PATCH_DEFAULTS, { patches: 3 }),
       rulesText: 'Reguli: toate cele trei triunghiuri roz = trecut; orice triunghi care nu este roz (albastru, violet) = eșuat.',
-      hint: 'Se citesc cele trei triunghiuri, fiecare separat. Albul etichetei din jurul lor este folosit automat ca referință de alb. Evitați reflexiile pe folia laminată.',
+      hint: 'Cele trei triunghiuri sunt găsite și citite automat, fiecare separat. Albul etichetei din jurul lor este folosit ca referință de alb. Lăsați un singur indicator în cadru și evitați reflexiile pe folia laminată.',
       messages: {
         pass: 'Virare completă - Test trecut',
         fail: 'Virare incompletă - Test eșuat!',
@@ -65,6 +65,7 @@
       },
       expected: { pass: 'Toate triunghiurile roz (trecut)', fail: 'Albastru / virare incompletă (eșuat)' },
       calibration: false,
+      autoRegion: true,
     },
   ];
 })(window);

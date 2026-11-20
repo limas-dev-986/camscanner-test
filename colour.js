@@ -442,6 +442,8 @@
     minL: 25,             // too dark to read
     maxL: 93,             // too bright to read
     maxClippedFrac: 0.3,  // reflection on the field
+    maxTiltDeg: 20,       // automatic capture: max phone tilt from flat (motion sensor)
+    useTiltSensor: 1,     // 1 = use the motion sensor when the phone has one
   };
 
   /** Paper white inside rect {x0, y0, x1, y1}: mean (linear RGB) of the brightest 15% of pixels. */

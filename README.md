@@ -112,10 +112,12 @@ These starting values come from synthetic sheets and the manufacturer's colour-c
 
 ### Type 5 chemical indicator (three triangles)
 
-1. The tester taps the middle of each of the three triangles. Each is measured separately.
+1. The three triangles are found automatically (see below) or the tester taps the middle of each one. Each is measured separately.
 2. The label paper around the triangles is found automatically and used as white reference.
 3. Each triangle is *pink* (hue 316°–20° after white correction, chroma ≥ 12), *not pink* (any other readable colour, including blue and in-between violet), or *unreadable* (reflection, too dark or bright, or too grey, which usually means the tap missed the triangle).
 4. Rules: any triangle not pink → **fail**; otherwise any unreadable or missing triangle → **uncertain**; all three pink → **pass**.
+
+**Automatic reading.** As with the sheet, scanning starts when the camera starts. The live image is searched for three pale blue-to-pink fields of similar size at roughly equal distances from each other (vivid print such as a logo is ignored). The photo is taken when the three fields are found, clear of the frame edge, large enough to read, the phone is within 20° of flat (motion sensor) and still. A small box well inside each triangle is then measured. Only one indicator may be in view: with two, the tool asks for a single one. Tapping the three triangles by hand, or *Selectează zona automat*, remain available.
 
 Measured on the first two phone photos: pink hue 328–336°, unprocessed blue 281–284°. No partly changed strip has been read yet, so where "almost pink" sits is unknown; by decision of the project owner, everything that is not clearly pink counts as a fail.
 
@@ -133,6 +135,7 @@ Append an entry to `products.js` (id, label, method `vial`, `sheet` or `patches`
 
 - The tool cannot tell the purple cap from purple liquid. The tester must tap the liquid.
 - Bowie & Dick, manual selection: the two-corner selection is an upright rectangle and is not straightened. Use it with the phone parallel to the sheet.
+- Type 5 indicator, automatic reading: tuned on two real photos (dark table) and synthetic images. A pale blue, violet or pink surface under the strip can confuse the search; there is no perspective check, only the motion sensor.
 - Bowie & Dick, automatic selection: tuned on synthetic images only so far. Expect one sheet in view, on a plain surface. A sheet whose stripes have vanished along a whole edge can be outlined too small; the shape check catches large cases only. Automatic selection is not available for vials yet.
 - Phone cameras process colour automatically (white balance, tone mapping). That is exactly what this test measures.
 - On iPhone, all browsers use Apple's WebKit engine, which is expected to expose fewer camera controls than Chrome on Android. The capability report records what is available.

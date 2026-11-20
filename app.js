@@ -4,7 +4,7 @@
   const C = window.Colour;
   const D = window.Detect;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-20.2';
+  const BUILD = '2026-11-20.3';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -275,7 +275,7 @@
     state.auto.active = true; state.auto.last = null; state.auto.stable = 0;
     $('btnCapture').textContent = 'Anulează';
     $('autoStatus').classList.remove('hidden');
-    $('autoStatus').textContent = 'Se caută modelul cu dungi…';
+    $('autoStatus').textContent = state.product.method === 'patches' ? 'Se caută cele trei triunghiuri…' : 'Se caută modelul cu dungi…';
     autoTick();
   }
 
@@ -291,6 +291,7 @@
     if (!state.auto.active) return;
     const a = state.auto, t = thr();
     const g = grabFrame(overlay.width, liveCanvas);
+    if (state.product.method === 'patches') { autoTickPatches(g); return; }
     const d = D.detectPattern(g.image.data, g.image.width, g.image.height);
     let msg = '', ok = false;
     octxLive.clearRect(0, 0, overlay.width, overlay.height);
@@ -317,9 +318,60 @@
     a.timer = setTimeout(autoTick, 150);
   }
 
+  // Live check for objects with separate indicator fields (triangles)
+  function autoTickPatches(g) {
+    const a = state.auto, t = thr();
+    const d = D.detectPatches(g.image.data, g.image.width, g.image.height);
+    const toFull = video.videoWidth ? Math.min(video.videoWidth, video.videoHeight * CAPTURE_ASPECT) / g.image.width : 3;
+    let msg = '', ok = false;
+    octxLive.clearRect(0, 0, overlay.width, overlay.height);
+    if (!d.found) msg = 'Se caută cele trei triunghiuri…';
+    else if (d.multiple) msg = 'Un singur indicator în cadru, vă rog';
+    else if (d.touchesBorder) msg = 'Îndepărtați telefonul: triunghiurile trebuie să fie în interiorul chenarului punctat';
+    else if (Math.min.apply(null, d.fields.map((p) => p.side)) * toFull * 0.3 < 12) msg = 'Apropiați telefonul';
+    else if (t.useTiltSensor && tiltFresh() && state.tilt.deg > t.maxTiltDeg) msg = 'Țineți telefonul mai aproape de orizontală: ' + Math.round(state.tilt.deg) + '° (max. ' + t.maxTiltDeg + '°)';
+    else ok = true;
+    if (d.found) {
+      octxLive.lineWidth = 3; octxLive.strokeStyle = ok ? '#00e676' : '#ffea00';
+      d.fields.forEach((p) => { octxLive.beginPath(); octxLive.arc(p.x, p.y, p.side * 0.6, 0, Math.PI * 2); octxLive.stroke(); });
+    }
+    if (ok) {
+      const moved = a.last ? Math.max.apply(null, d.fields.map((p, i) => Math.hypot(p.x - a.last[i].x, p.y - a.last[i].y))) : Infinity;
+      a.stable = moved < 0.03 * g.image.width ? a.stable + 1 : 0;
+      a.last = d.fields;
+      msg = 'Nu mișcați telefonul…';
+      if (a.stable >= 3) { stopAuto(); capture({ auto: true }); return; }
+    } else { a.stable = 0; a.last = null; }
+    $('autoStatus').textContent = msg;
+    a.timer = setTimeout(autoTick, 150);
+  }
+
+  // Automatic fields on the captured frame: find the three triangles and read them
+  function autoPatches() {
+    const f = state.frame;
+    const d = D.detectPatches(f.data, f.width, f.height);
+    state.patchPts = []; state.patchSize = null;
+    if (!d.found || d.fields.length < thr().patches) {
+      state.lastReading = null; $('resultSection').classList.add('hidden');
+      state.autoNote = 'Triunghiurile nu au fost găsite automat. '; redraw(); state.autoNote = '';
+      return;
+    }
+    state.patchPts = d.fields.map((p) => ({ x: p.x, y: p.y }));
+    state.patchSize = Math.max(6, Math.round(Math.min.apply(null, d.fields.map((p) => p.side)) * 0.3)); // box well inside each triangle
+    measurePatches();
+    if (state.lastReading) {
+      state.lastReading.autoFields = true;
+      state.lastReading.reasons.push('triunghiuri selectate automat');
+      if (d.multiple && state.lastReading.cls === 'pass') { state.lastReading.cls = 'uncertain'; state.lastReading.reasons.unshift('mai multe indicatoare în fotografie: lăsați doar unul în cadru'); }
+      showResult();
+    }
+    redraw();
+  }
+
   // Automatic region on the captured frame: find the pattern, straighten it, analyse it
   function autoRegion() {
     if (!state.frame || !state.product.autoRegion) return;
+    if (state.product.method === 'patches') return autoPatches();
     const f = state.frame, t = thr();
     state.corners = [];
     const d = D.detectPattern(f.data, f.width, f.height);
@@ -346,7 +398,7 @@
   }
 
   function resetRegions() {
-    state.roiIndicator = null; state.roiWhite = null; state.corners = []; state.patchPts = []; state.lastReading = null;
+    state.roiIndicator = null; state.roiWhite = null; state.corners = []; state.patchPts = []; state.patchSize = null; state.lastReading = null;
     $('resultSection').classList.add('hidden');
     redraw();
   }
@@ -367,7 +419,7 @@
     };
     let step;
     if (state.product.method === 'patches') {
-      const size = roiPx(), need = thr().patches;
+      const size = state.patchSize || roiPx(), need = thr().patches;
       const res = state.lastReading && state.lastReading.patches;
       const COL = { end: '#00c853', other: '#ff1744', unreadable: '#ff9100' };
       state.patchPts.forEach((p, i) => {
@@ -377,8 +429,8 @@
         label(String(i + 1), p.x + size / 2 + 6, p.y, colour);
       });
       $('roiSizeVal').textContent = size + ' px';
-      if (state.patchPts.length < need) step = 'Atingeți triunghiul ' + (state.patchPts.length + 1) + ' din ' + need + ', în mijlocul lui. Caseta trebuie să rămână în interiorul triunghiului.';
-      else step = 'Gata. Casete: verde = roz, roșu = nu este roz, portocaliu = nu s-a putut citi. Atingeți imaginea pentru o nouă selecție.';
+      if (state.patchPts.length < need) step = (state.autoNote || '') + 'Atingeți triunghiul ' + (state.patchPts.length + 1) + ' din ' + need + ', în mijlocul lui. Caseta trebuie să rămână în interiorul triunghiului.';
+      else step = (state.lastReading && state.lastReading.autoFields ? 'Triunghiuri selectate automat. ' : 'Gata. ') + 'Casete: verde = roz, roșu = nu este roz, portocaliu = nu s-a putut citi. Pentru selectare manuală, atingeți pe rând cele trei triunghiuri.';
     } else if (state.product.method === 'vial') {
       const size = roiPx();
       const drawBox = (p, colour, text) => {
@@ -442,7 +494,7 @@
     const x = ((ev.clientX - rect.left) / rect.width) * frameCanvas.width;
     const y = ((ev.clientY - rect.top) / rect.height) * frameCanvas.height;
     if (state.product.method === 'patches') {
-      if (state.patchPts.length >= thr().patches) { state.patchPts = []; state.lastReading = null; $('resultSection').classList.add('hidden'); }
+      if (state.patchPts.length >= thr().patches) { state.patchPts = []; state.patchSize = null; state.lastReading = null; $('resultSection').classList.add('hidden'); }
       state.patchPts.push({ x: x, y: y });
       if (state.patchPts.length === thr().patches) measure();
       redraw();
@@ -476,7 +528,7 @@
   const VIAL_CLASS = { no_growth: 'pass', growth: 'fail', uncertain: 'uncertain' };
 
   function measurePatches() {
-    const f = state.frame, size = roiPx(), pts = state.patchPts;
+    const f = state.frame, size = state.patchSize || roiPx(), pts = state.patchPts;
     if (pts.length < thr().patches) return;
     // White reference = the label paper around the tapped fields
     const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
@@ -692,7 +744,7 @@
   }
 
   function patchFields(P) {
-    const o = { roiSizePx: P.roiSize };
+    const o = { roiSizePx: P.roiSize, patch_region: state.lastReading && state.lastReading.autoFields ? 'auto' : 'manual' };
     if (P.white) ['r', 'g', 'b'].forEach((ch, k) => { o['white_' + ch] = round(C.linearToSrgb(P.white[k]), 1); });
     P.fields.forEach((fl, i) => {
       const p = P.res.patches[i], n = 'patch' + (i + 1) + '_';
@@ -961,7 +1013,7 @@
   $('btnAutoRoi').addEventListener('click', autoRegion);
   frameCanvas.addEventListener('click', onFrameTap);
   $('roiSize').addEventListener('input', () => {
-    if (state.product.method === 'patches') { if (state.patchPts.length === thr().patches) measure(); redraw(); return; }
+    if (state.product.method === 'patches') { state.patchSize = null; if (state.patchPts.length === thr().patches) measure(); redraw(); return; }
     redraw(); if (state.roiIndicator && state.roiWhite) measure();
   });
   $('btnSkipWhite').addEventListener('click', () => { state.roiWhite = 'skipped'; redraw(); measure(); });
