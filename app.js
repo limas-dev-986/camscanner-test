@@ -4,7 +4,7 @@
   const C = window.Colour;
   const D = window.Detect;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-20.1';
+  const BUILD = '2026-11-20.2';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -18,7 +18,8 @@
   };
   const K = { log: 'bi-test-log', refs: 'bi-test-refs', thr: 'bi-test-thresholds-v4', thrOld: 'bi-test-thresholds', session: 'bi-test-session' };
 
-  const DEFAULTS_BY_METHOD = { vial: C.DEFAULT_THRESHOLDS, sheet: C.SHEET_DEFAULTS };
+  // Each object carries its own colour rules (products.js); these are the defaults for the settings section.
+  const rulesOf = (p) => p.rules;
 
   function loadThresholds() {
     const saved = store.get(K.thr, null) || {};
@@ -29,7 +30,7 @@
     const v2 = store.get('bi-test-thresholds-v2', null); // keep edited vial values; sheet values reset to new defaults (build .5)
     if (v2 && v2['bi-vial'] && !saved['bi-vial']) saved['bi-vial'] = v2['bi-vial'];
     const out = {};
-    PRODUCTS.forEach((p) => { out[p.id] = Object.assign({}, DEFAULTS_BY_METHOD[p.method], saved[p.id] || {}); });
+    PRODUCTS.forEach((p) => { out[p.id] = Object.assign({}, rulesOf(p), saved[p.id] || {}); });
     return out;
   }
 
@@ -44,6 +45,7 @@
     roiIndicator: null,   // vial: {x, y}
     roiWhite: null,       // vial: {x, y} or 'skipped'
     corners: [],          // sheet: up to two {x, y}
+    patchPts: [],         // patches: tapped field centres
     lastReading: null,
     capReport: {},
     log: store.get(K.log, []),
@@ -76,10 +78,8 @@
     state.product = PRODUCTS.find((p) => p.id === id) || PRODUCTS[0];
     $('selProduct').value = state.product.id;
     const vial = state.product.method === 'vial';
-    $('productHint').textContent = vial
-      ? 'Se citește lichidul din partea de jos a fiolei. Referință de alb opțională: partea albă a etichetei.'
-      : 'Se citește întregul model imprimat al testului, zonă cu zonă. Țineți telefonul paralel cu testul; evitați umbrele și reflexiile.';
-    $('roiSizeRow').classList.toggle('hidden', !vial);
+    $('productHint').innerHTML = '<strong>' + escapeHtml(state.product.rulesText) + '</strong><br>' + escapeHtml(state.product.hint);
+    $('roiSizeRow').classList.toggle('hidden', state.product.method === 'sheet');
     $('btnSkipWhite').classList.toggle('hidden', !vial);
     $('btnAutoRoi').classList.toggle('hidden', !state.product.autoRegion);
     $('autoLabel').classList.toggle('hidden', !state.product.autoRegion);
@@ -346,7 +346,7 @@
   }
 
   function resetRegions() {
-    state.roiIndicator = null; state.roiWhite = null; state.corners = []; state.lastReading = null;
+    state.roiIndicator = null; state.roiWhite = null; state.corners = []; state.patchPts = []; state.lastReading = null;
     $('resultSection').classList.add('hidden');
     redraw();
   }
@@ -366,7 +366,20 @@
       ctx.strokeText(text, x, y); ctx.fillText(text, x, y);
     };
     let step;
-    if (state.product.method === 'vial') {
+    if (state.product.method === 'patches') {
+      const size = roiPx(), need = thr().patches;
+      const res = state.lastReading && state.lastReading.patches;
+      const COL = { end: '#00c853', other: '#ff1744', unreadable: '#ff9100' };
+      state.patchPts.forEach((p, i) => {
+        const colour = res && res.res.patches[i] ? COL[res.res.patches[i].state] : '#00e5ff';
+        ctx.lineWidth = lw; ctx.strokeStyle = colour;
+        ctx.strokeRect(p.x - size / 2, p.y - size / 2, size, size);
+        label(String(i + 1), p.x + size / 2 + 6, p.y, colour);
+      });
+      $('roiSizeVal').textContent = size + ' px';
+      if (state.patchPts.length < need) step = 'Atingeți triunghiul ' + (state.patchPts.length + 1) + ' din ' + need + ', în mijlocul lui. Caseta trebuie să rămână în interiorul triunghiului.';
+      else step = 'Gata. Casete: verde = roz, roșu = nu este roz, portocaliu = nu s-a putut citi. Atingeți imaginea pentru o nouă selecție.';
+    } else if (state.product.method === 'vial') {
       const size = roiPx();
       const drawBox = (p, colour, text) => {
         ctx.lineWidth = lw; ctx.strokeStyle = colour;
@@ -428,7 +441,12 @@
     const rect = frameCanvas.getBoundingClientRect();
     const x = ((ev.clientX - rect.left) / rect.width) * frameCanvas.width;
     const y = ((ev.clientY - rect.top) / rect.height) * frameCanvas.height;
-    if (state.product.method === 'vial') {
+    if (state.product.method === 'patches') {
+      if (state.patchPts.length >= thr().patches) { state.patchPts = []; state.lastReading = null; $('resultSection').classList.add('hidden'); }
+      state.patchPts.push({ x: x, y: y });
+      if (state.patchPts.length === thr().patches) measure();
+      redraw();
+    } else if (state.product.method === 'vial') {
       if (!state.roiIndicator || (state.roiIndicator && state.roiWhite)) state.roiIndicator = { x: x, y: y };
       else state.roiWhite = { x: x, y: y };
       redraw();
@@ -457,7 +475,27 @@
 
   const VIAL_CLASS = { no_growth: 'pass', growth: 'fail', uncertain: 'uncertain' };
 
+  function measurePatches() {
+    const f = state.frame, size = roiPx(), pts = state.patchPts;
+    if (pts.length < thr().patches) return;
+    // White reference = the label paper around the tapped fields
+    const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+    const pad = Math.max(2 * size, 0.6 * Math.max(Math.max.apply(null, xs) - Math.min.apply(null, xs), Math.max.apply(null, ys) - Math.min.apply(null, ys)));
+    const rect = { x0: Math.min.apply(null, xs) - pad, y0: Math.min.apply(null, ys) - pad, x1: Math.max.apply(null, xs) + pad, y1: Math.max.apply(null, ys) + pad };
+    const white = C.paperWhite(f.data, f.width, f.height, rect);
+    const fields = pts.map((p) => {
+      const st = C.regionStats(f.data, f.width, f.height, p.x, p.y, size);
+      if (!st.lin) return { stats: { clippedFrac: 1 }, lab: { L: 100, a: 0, b: 0 }, rawLab: null, raw: null };
+      const corr = white ? C.applyWhiteReference(st.lin, white, 0.85) : st.lin;
+      return { stats: st, lab: C.linRgbToLab(corr), rawLab: C.linRgbToLab(st.lin), raw: st.srgb, corr: corr };
+    });
+    const res = C.classifyPatches(fields, thr());
+    state.lastReading = { method: 'patches', cls: res.cls, reasons: res.reasons.slice(), patches: { res, fields, white, roiSize: size } };
+    showResult();
+  }
+
   function measure() {
+    if (state.product.method === 'patches') return measurePatches();
     if (state.product.method === 'sheet') return state.corners.length === 2 ? measureSheet() : autoRegion();
     const f = state.frame;
     const size = roiPx();
@@ -526,7 +564,16 @@
     box.textContent = state.product.messages[r.cls];
     $('resultReasons').textContent = r.reasons.join(' · ');
     let rows;
-    if (r.method === 'vial') {
+    if (r.method === 'patches') {
+      const P = r.patches, STATE_RO = { end: 'roz', other: 'nu este roz', unreadable: 'necitit' };
+      rows = P.fields.map((fl, i) => {
+        const p = P.res.patches[i];
+        return ['Triunghiul ' + (i + 1), (fl.corr ? swatch(fl.corr.map(C.linearToSrgb)) : '') + STATE_RO[p.state] + (p.state === 'unreadable' ? ' (' + p.why + ')' : '') +
+          ' · nuanță ' + fmt(p.lch.h, 0) + '° · saturație ' + fmt(p.lch.C) + ' · L* ' + fmt(p.lch.L, 0)];
+      });
+      rows.push(['Referință de alb (hârtia etichetei), RGB', P.white ? swatch(P.white.map(C.linearToSrgb)) + P.white.map((x) => fmt(C.linearToSrgb(x), 0)).join(', ') : 'negăsită']);
+      rows.push(['Zonă', P.roiSize + ' px pe fiecare triunghi']);
+    } else if (r.method === 'vial') {
       const v = r.vial;
       const lab = (l) => (l ? fmt(l.L) + ' / ' + fmt(l.a) + ' / ' + fmt(l.b) : '—');
       rows = [
@@ -602,7 +649,7 @@
         whiteBalanceMode: s.whiteBalanceMode || '', colorTemperature: s.colorTemperature ?? '',
         focusMode: s.focusMode || '', focusDistance: s.focusDistance ?? '',
       },
-      r.method === 'vial' ? vialFields(r.vial) : sheetFields(r),
+      r.method === 'vial' ? vialFields(r.vial) : r.method === 'patches' ? patchFields(r.patches) : sheetFields(r),
       {
         predicted: predicted,
         message: state.product.messages[predicted],
@@ -642,6 +689,19 @@
       refsPurpleN: v.refs.purple ? v.refs.purple.n : 0,
       refsYellowN: v.refs.yellow ? v.refs.yellow.n : 0,
     };
+  }
+
+  function patchFields(P) {
+    const o = { roiSizePx: P.roiSize };
+    if (P.white) ['r', 'g', 'b'].forEach((ch, k) => { o['white_' + ch] = round(C.linearToSrgb(P.white[k]), 1); });
+    P.fields.forEach((fl, i) => {
+      const p = P.res.patches[i], n = 'patch' + (i + 1) + '_';
+      o[n + 'state'] = p.state;
+      o[n + 'hue'] = round(p.lch.h, 1); o[n + 'chroma'] = round(p.lch.C); o[n + 'L'] = round(p.lch.L);
+      if (fl.raw) { o[n + 'raw_rgb'] = fl.raw.map((v) => Math.round(v)).join(' '); const rl = C.labToLch(fl.rawLab); o[n + 'raw_hue'] = round(rl.h, 1); o[n + 'raw_chroma'] = round(rl.C); }
+      o[n + 'clippedPct'] = Math.round((fl.stats.clippedFrac || 0) * 100);
+    });
+    return o;
   }
 
   function sheetFields(r) {
@@ -778,11 +838,12 @@
     maxTiltDeg: 'Fotografiere automată: înclinare maximă (°)', useTiltSensor: 'Fotografiere automată: folosește senzorul de mișcare (1/0)',
     maxSideRatio: 'Fotografiere automată: raport maxim între laturile opuse', minAreaFrac: 'Fotografiere automată: proporție minimă din cadru',
     aspectMin: 'Zonă automată: raport minim lățime/înălțime', aspectMax: 'Zonă automată: raport maxim lățime/înălțime',
+    patches: 'Număr de triunghiuri (toate trebuie să fie roz)', passHueMin: 'Roz: nuanță de la (°)', passHueMax: 'Roz: nuanță până la (°)', passMinChroma: 'Roz: saturație minimă',
     failInkL: 'Eșuat: L* al dungilor de la', failSpreadL: 'Eșuat: ΔL* între zone de la (dacă zona cea mai deschisă nu este neagră)', failInkRatio: 'Eșuat: raportul densității dungilor sub',
   };
   function renderThresholds() {
     const t = thr();
-    $('thresholdGrid').innerHTML = Object.keys(DEFAULTS_BY_METHOD[state.product.method]).map((k) =>
+    $('thresholdGrid').innerHTML = Object.keys(rulesOf(state.product)).map((k) =>
       '<label>' + (THR_LABELS[k] || k) + '<input type="number" step="any" data-thr="' + k + '" value="' + t[k] + '"></label>').join('');
   }
   function onThresholdChange(ev) {
@@ -899,7 +960,10 @@
   $('autoCapture').addEventListener('change', (e) => { if (!e.target.checked) stopAuto(); else if (state.track && state.product.autoRegion && !state.auto.active) startAuto(); });
   $('btnAutoRoi').addEventListener('click', autoRegion);
   frameCanvas.addEventListener('click', onFrameTap);
-  $('roiSize').addEventListener('input', () => { redraw(); if (state.roiIndicator && state.roiWhite) measure(); });
+  $('roiSize').addEventListener('input', () => {
+    if (state.product.method === 'patches') { if (state.patchPts.length === thr().patches) measure(); redraw(); return; }
+    redraw(); if (state.roiIndicator && state.roiWhite) measure();
+  });
   $('btnSkipWhite').addEventListener('click', () => { state.roiWhite = 'skipped'; redraw(); measure(); });
   $('btnResetRoi').addEventListener('click', resetRegions);
   $('btnRetake').addEventListener('click', () => {
@@ -919,7 +983,7 @@
   $('btnClearLog').addEventListener('click', (e) => armButton(e.target, 'Șterge jurnalul', () => { state.log = []; store.set(K.log, state.log); renderLog(); }));
   $('thresholdGrid').addEventListener('change', onThresholdChange);
   $('btnResetThresholds').addEventListener('click', () => {
-    state.thresholds[state.product.id] = Object.assign({}, DEFAULTS_BY_METHOD[state.product.method]);
+    state.thresholds[state.product.id] = Object.assign({}, rulesOf(state.product));
     store.set(K.thr, state.thresholds); renderThresholds(); if (state.lastReading) { measure(); redraw(); }
   });
   $('btnCapRefresh').addEventListener('click', refreshCapabilities);

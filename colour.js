@@ -432,9 +432,74 @@
   }
 
 
+  // ---------- Colour patches (e.g. three indicator fields that must all reach the end colour) ----------
+  const PATCH_DEFAULTS = {
+    patches: 3,           // number of indicator fields; ALL must show the end colour for a pass
+    passHueMin: 316,      // end colour (pink): accepted hue band in degrees, measured after white correction ...
+    passHueMax: 20,       // ... first phone photos: pink 328-336, unprocessed blue 281-284 (midpoint about 306)
+    passMinChroma: 12,    // end colour must be at least this strong (measured pink: 15-23)
+    minChroma: 7,         // below this the field is too grey to read (wrong spot or bad light)
+    minL: 25,             // too dark to read
+    maxL: 93,             // too bright to read
+    maxClippedFrac: 0.3,  // reflection on the field
+  };
+
+  /** Paper white inside rect {x0, y0, x1, y1}: mean (linear RGB) of the brightest 15% of pixels. */
+  function paperWhite(data, width, height, rect) {
+    const x0 = Math.max(0, Math.round(rect.x0)), y0 = Math.max(0, Math.round(rect.y0));
+    const x1 = Math.min(width, Math.round(rect.x1)), y1 = Math.min(height, Math.round(rect.y1));
+    const step = Math.max(1, Math.floor(Math.sqrt(((x1 - x0) * (y1 - y0)) / 40000)));
+    const ys = [];
+    for (let y = y0; y < y1; y += step) for (let x = x0; x < x1; x += step) {
+      const i = (y * width + x) * 4;
+      ys.push(0.2126729 * LIN[data[i]] + 0.7151522 * LIN[data[i + 1]] + 0.072175 * LIN[data[i + 2]]);
+    }
+    if (!ys.length) return null;
+    const cut = percentile(Float64Array.from(ys).sort(), 0.85);
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let y = y0; y < y1; y += step) for (let x = x0; x < x1; x += step) {
+      const i = (y * width + x) * 4;
+      const Y = 0.2126729 * LIN[data[i]] + 0.7151522 * LIN[data[i + 1]] + 0.072175 * LIN[data[i + 2]];
+      if (Y >= cut) { r += LIN[data[i]]; g += LIN[data[i + 1]]; b += LIN[data[i + 2]]; n++; }
+    }
+    return n ? [r / n, g / n, b / n] : null;
+  }
+
+  /**
+   * Classify a set of indicator fields. fields: [{ lab, stats }] (lab after white correction).
+   * Each field is 'end' (end colour reached), 'other' (readable, but not the end colour) or 'unreadable'.
+   * Rule: any 'other' -> fail; else any 'unreadable' or a missing field -> uncertain; else pass.
+   */
+  function classifyPatches(fields, thresholds) {
+    const t = Object.assign({}, PATCH_DEFAULTS, thresholds || {});
+    const out = fields.map((f) => {
+      const lch = labToLch(f.lab);
+      const inBand = hueIn(lch.h, t.passHueMin, t.passHueMax);
+      let state = 'other', why = '';
+      if (f.stats && f.stats.clippedFrac > t.maxClippedFrac) { state = 'unreadable'; why = 'reflexie'; }
+      else if (lch.L < t.minL) { state = 'unreadable'; why = 'prea întunecat'; }
+      else if (lch.L > t.maxL) { state = 'unreadable'; why = 'prea luminos'; }
+      else if (lch.C < t.minChroma) { state = 'unreadable'; why = 'prea cenușiu (ați atins triunghiul?)'; }
+      else if (inBand && lch.C < t.passMinChroma) { state = 'unreadable'; why = 'roz prea slab'; }
+      else if (inBand) { state = 'end'; why = 'roz'; }
+      else why = 'nu este roz';
+      return { state, why, lch };
+    });
+    const reasons = [];
+    const n = (s) => out.filter((p) => p.state === s).length;
+    let cls;
+    if (n('other')) { cls = 'fail'; reasons.push(n('other') + ' din ' + t.patches + ' triunghiuri nu sunt roz'); }
+    else if (out.length < t.patches || n('unreadable')) {
+      cls = 'uncertain';
+      out.forEach((p, i) => { if (p.state === 'unreadable') reasons.push('triunghiul ' + (i + 1) + ': ' + p.why); });
+      if (out.length < t.patches) reasons.push('nu au fost selectate toate triunghiurile');
+    } else { cls = 'pass'; reasons.push('toate cele ' + t.patches + ' triunghiuri sunt roz'); }
+    return { cls, reasons, patches: out };
+  }
+
   const api = {
     srgbToLinear, linearToSrgb, linRgbToXyz, xyzToLab, linRgbToLab, srgbToLab, labToLch,
-    deltaE2000, regionStats, applyWhiteReference, classify, hueIn, analyseSheet,
+    deltaE2000, regionStats, applyWhiteReference, classify, hueIn, analyseSheet, paperWhite, classifyPatches, PATCH_DEFAULTS,
     DEFAULT_THRESHOLDS, SHEET_DEFAULTS,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -102,5 +102,18 @@ sheetCase('uniform dark grey (L* ~44)', sheet(() => [95, 95, 95], WHITE), 'pass'
 const blank = new Uint8ClampedArray(100 * 100 * 4).fill(235);
 check('sheet: blank paper -> uncertain', C.analyseSheet(blank, 100, 100, { x0: 0, y0: 0, x1: 100, y1: 100 }).cls === 'uncertain');
 
+// ---------- Colour patches (type 5 indicator: three fields, all must be pink) ----------
+const fld = (rgb, clipped) => ({ lab: C.srgbToLab(...rgb), stats: { clippedFrac: clipped || 0 } });
+const PK = [222, 178, 200], BL = [176, 180, 205], VI = [196, 180, 222], PAPER = [240, 240, 238];
+const pc = (name, fields, exp) => { const r = C.classifyPatches(fields); check('patches: ' + name + ' -> ' + exp, r.cls === exp, r.cls + ' ' + r.reasons.join('; ') + ' ' + r.patches.map((p) => p.lch.h.toFixed(0) + '/' + p.lch.C.toFixed(0)).join(' ')); };
+pc('three pink', [fld(PK), fld(PK), fld(PK)], 'pass');
+pc('three blue', [fld(BL), fld(BL), fld(BL)], 'fail');
+pc('two pink, one blue', [fld(PK), fld(PK), fld(BL)], 'fail');
+pc('two pink, one violet (in between)', [fld(PK), fld(PK), fld(VI)], 'fail');
+pc('two pink, one on white paper', [fld(PK), fld(PK), fld(PAPER)], 'uncertain');
+pc('two pink, one with reflection', [fld(PK), fld(PK), fld(PK, 0.6)], 'uncertain');
+pc('one blue, one unreadable', [fld(PK), fld(BL), fld(PAPER)], 'fail');
+pc('only two fields selected', [fld(PK), fld(PK)], 'uncertain');
+
 console.log(failed ?'\n' + failed + ' test(s) failed' : '\nall tests passed');
 process.exit(failed ? 1 : 0);

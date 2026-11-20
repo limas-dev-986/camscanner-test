@@ -9,7 +9,11 @@ A single web page that checks whether a phone browser can read the colour change
 | Biological indicator, self-contained vial | Liquid stays purple | Liquid turns yellow / green | Fără creștere bacteriană - Procesul a avut succes / Creștere bacteriană - Proces eșuat! |
 | Bowie & Dick test sheet | Pink stripes turned uniformly black | Pink left, or lighter / uneven areas | Virare completă - Test trecut / Virare incompletă - Test eșuat! |
 
+| Type 5 chemical indicator, self-adhesive strip (steam) | All three triangles pink | Any triangle not pink (blue, violet) | Virare completă - Test trecut / Virare incompletă - Test eșuat! |
+
 Anything not clearly pass or fail shows "Rezultat incert - Repetați citirea".
+
+**Each object carries its own rules.** The reading method, colour limits and messages are stored with the object in `products.js`; choosing an object in the list applies them. The same colour can mean opposite things on different objects (pink is a fail on the Bowie & Dick sheet and a pass on the type 5 indicator), so the tester must choose the right object.
 
 A purple vial reading only means "no colour change". It is meaningful only for a vial that was processed, activated and incubated for its full reading time. The tool cannot see any of that.
 
@@ -106,7 +110,16 @@ The selected pattern is split into a 5 × 5 grid of areas.
 
 These starting values come from synthetic sheets and the manufacturer's colour-change scheme image. They must be checked against real processed sheets.
 
-### Both objects
+### Type 5 chemical indicator (three triangles)
+
+1. The tester taps the middle of each of the three triangles. Each is measured separately.
+2. The label paper around the triangles is found automatically and used as white reference.
+3. Each triangle is *pink* (hue 316°–20° after white correction, chroma ≥ 12), *not pink* (any other readable colour, including blue and in-between violet), or *unreadable* (reflection, too dark or bright, or too grey, which usually means the tap missed the triangle).
+4. Rules: any triangle not pink → **fail**; otherwise any unreadable or missing triangle → **uncertain**; all three pink → **pass**.
+
+Measured on the first two phone photos: pink hue 328–336°, unprocessed blue 281–284°. No partly changed strip has been read yet, so where "almost pink" sits is unknown; by decision of the project owner, everything that is not clearly pink counts as a fail.
+
+### All objects
 
 **A failed sample read as passed is an unsafe error.** The log flags it, and the test plan treats any occurrence as a stop signal.
 
@@ -114,7 +127,7 @@ Thresholds are editable in section 7, separately for each object. Change them on
 
 ## Adding an object
 
-Append an entry to `products.js` (id, label, method `vial` or `sheet`, messages, expected-result labels). Use generic labels: the repository is public, so no manufacturer or product names. A new colour scheme that is neither "one region" nor "pattern sheet" needs a new method in `colour.js`.
+Append an entry to `products.js` (id, label, method `vial`, `sheet` or `patches`, its rules, messages, expected-result labels). Use generic labels: the repository is public, so no manufacturer or product names. A new colour scheme that is neither "one region" nor "pattern sheet" needs a new method in `colour.js`.
 
 ## Known limitations
 
