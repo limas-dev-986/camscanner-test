@@ -117,7 +117,7 @@ These starting values come from synthetic sheets and the manufacturer's colour-c
 3. Each triangle is *pink* (hue 316°–20° after white correction, chroma ≥ 12), *not pink* (any other readable colour, including blue and in-between violet), or *unreadable* (reflection, too dark or bright, or too grey, which usually means the tap missed the triangle).
 4. Rules: any triangle not pink → **fail**; otherwise any unreadable or missing triangle → **uncertain**; all three pink → **pass**.
 
-**Automatic reading.** As with the sheet, scanning starts when the camera starts. The live image is searched for three pale blue-to-pink fields of similar size at roughly equal distances from each other (vivid print such as a logo is ignored). The photo is taken when the three fields are found, clear of the frame edge, large enough to read, the phone is within 20° of flat (motion sensor) and still. A small box well inside each triangle is then measured. Only one indicator may be in view: with two, the tool asks for a single one. Tapping the three triangles by hand, or *Selectează zona automat*, remain available.
+**Automatic reading.** As with the sheet, scanning starts when the camera starts. The live image is searched for three pale blue-to-pink fields of similar size at roughly equal distances from each other (vivid print such as a logo is ignored). The photo is taken when the three fields are found, clear of the frame edge, large enough to read, the phone is within 20° of flat (motion sensor) and still. A small box well inside each triangle is then measured. Only one indicator may be in view: with two, the tool asks for a single one. If the triangles are burnt out (overexposed) in the live image, the tool does not capture: it lowers the camera's exposure compensation where the phone exposes it, otherwise it asks the tester to shade the indicator or change the angle. Colours are judged against the white found near each spot of the image, so a brighter spot elsewhere in the frame does not disturb the search. Tapping the three triangles by hand, or *Selectează zona automat*, remain available.
 
 Measured on the first two phone photos: pink hue 328–336°, unprocessed blue 281–284°. No partly changed strip has been read yet, so where "almost pink" sits is unknown; by decision of the project owner, everything that is not clearly pink counts as a fail.
 
@@ -130,6 +130,11 @@ Thresholds are editable in section 7, separately for each object. Change them on
 ## Adding an object
 
 Append an entry to `products.js` (id, label, method `vial`, `sheet` or `patches`, its rules, messages, expected-result labels). Use generic labels: the repository is public, so no manufacturer or product names. A new colour scheme that is neither "one region" nor "pattern sheet" needs a new method in `colour.js`.
+
+## Diagnostics
+
+- **Wrong object selected:** if nothing is found for 5 seconds during automatic scanning, the tool suggests checking the selected object.
+- **Salvează fotografia** downloads the captured frame to the phone, so that a failing case can be analysed. The page never uploads it. Photos show the product's printed label: **never commit them to this public repository.**
 
 ## Known limitations
 

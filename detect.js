@@ -312,9 +312,10 @@
   const Col = typeof module !== 'undefined' && module.exports ? require('./colour.js') : root.Colour;
   const PATCH_DETECT = {
     workWidth: 360,
-    hueMin: 240, hueMax: 30,   // candidate colours: blue through violet to pink
-    cMin: 7, cMax: 45,         // pale colours only: vivid print (logos) is ignored
-    lMin: 40, lMax: 95,
+    hueMin: 225, hueMax: 30,   // candidate colours: blue through violet to pink
+    cMin: 7, cMax: 55,         // pale colours only: vivid print (logos) is ignored
+    lMin: 30, lMax: 95,
+    tile: 48,                  // white is estimated per tile of this size (work px), so a brighter spot elsewhere does not matter
     minArea: 30,               // work px
   };
 
@@ -347,10 +348,39 @@
     for (let k = 0; k < n; k++) if (Y[k] >= cut) { wr += R[k]; wg += G[k]; wb += B[k]; wn++; }
     if (!wn || wr / wn < 0.02) return { found: false, reason: 'too dark' };
     const white = [wr / wn, wg / wn, wb / wn];
+    // 2b. local white: brightest 5% of each tile; tiles without bright paper fall back to the global white
+    const T = o.tile, tw = Math.ceil(ww / T), th = Math.ceil(wh / T);
+    const tiles = new Array(tw * th);
+    for (let ty = 0; ty < th; ty++) for (let tx = 0; tx < tw; tx++) {
+      const ys = [];
+      for (let y = ty * T; y < Math.min(wh, ty * T + T); y++) for (let x = tx * T; x < Math.min(ww, tx * T + T); x++) ys.push(Y[y * ww + x]);
+      ys.sort((p, q) => p - q);
+      const c = ys[Math.floor(ys.length * 0.95)];
+      let r = 0, g = 0, b = 0, m = 0;
+      if (c >= cut * 0.3) {
+        for (let y = ty * T; y < Math.min(wh, ty * T + T); y++) for (let x = tx * T; x < Math.min(ww, tx * T + T); x++) {
+          const k = y * ww + x;
+          if (Y[k] >= c) { r += R[k]; g += G[k]; b += B[k]; m++; }
+        }
+      }
+      tiles[ty * tw + tx] = m ? { w: [r / m, g / m, b / m], y: c } : null;
+    }
+    const localWhite = (x, y) => { // brightest paper among the tile and its neighbours
+      const tx = Math.floor(x / T), ty = Math.floor(y / T);
+      let best = null;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const ax = tx + dx, ay = ty + dy;
+        if (ax < 0 || ay < 0 || ax >= tw || ay >= th) continue;
+        const t = tiles[ay * tw + ax];
+        if (t && (!best || t.y > best.y)) best = t;
+      }
+      return best || { w: white, y: cut };
+    };
     // 3. candidate mask
     const mask = new Uint8Array(n);
     for (let k = 0; k < n; k++) {
-      if (Y[k] > cut * 0.97 || Y[k] < cut * 0.1) continue; // paper itself / very dark
+      const lw = localWhite(k % ww, (k / ww) | 0), white = lw.w;
+      if (Y[k] > lw.y * 0.97 || Y[k] < lw.y * 0.1) continue; // paper itself / very dark
       const lch = Col.labToLch(Col.linRgbToLab([R[k] * 0.85 / white[0], G[k] * 0.85 / white[1], B[k] * 0.85 / white[2]]));
       if (lch.C >= o.cMin && lch.C <= o.cMax && lch.L >= o.lMin && lch.L <= o.lMax && Col.hueIn(lch.h, o.hueMin, o.hueMax)) mask[k] = 1;
     }

@@ -4,7 +4,7 @@
   const C = window.Colour;
   const D = window.Detect;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-20.3';
+  const BUILD = '2026-11-23.1';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -120,6 +120,7 @@
     try { await video.play(); } catch (e) { /* ignore */ }
     await new Promise((res) => { if (video.videoWidth) res(); else video.onloadedmetadata = () => res(); });
     state.locks = { exposure: false, wb: false, focus: false, torch: false };
+    state.expComp = null;
     ['lockExposure', 'lockWB', 'lockFocus', 'torch'].forEach((id) => ($(id).checked = false));
     try { state.imageCapture = 'ImageCapture' in window ? new ImageCapture(state.track) : null; } catch (e) { state.imageCapture = null; }
     status.textContent = 'Cameră: ' + (state.track.label || 'fără nume') + ' · ' + video.videoWidth + '×' + video.videoHeight;
@@ -272,7 +273,7 @@
 
   function startAuto() {
     hookOrientation();
-    state.auto.active = true; state.auto.last = null; state.auto.stable = 0;
+    state.auto.active = true; state.auto.last = null; state.auto.stable = 0; state.auto.notFoundSince = null; state.auto.lastExpStep = 0;
     $('btnCapture').textContent = 'Anulează';
     $('autoStatus').classList.remove('hidden');
     $('autoStatus').textContent = state.product.method === 'patches' ? 'Se caută cele trei triunghiuri…' : 'Se caută modelul cu dungi…';
@@ -287,6 +288,28 @@
     octxLive.clearRect(0, 0, overlay.width, overlay.height);
   }
 
+  // After 5 s without finding the object, suggest that the wrong object may be selected
+  function notFoundMsg(searching) {
+    const a = state.auto, now = Date.now();
+    if (!a.notFoundSince) a.notFoundSince = now;
+    return now - a.notFoundSince >= 5000 ? 'Nu s-a găsit nimic. Asigurați-vă că ați selectat obiectul corect pentru scanare.' : searching;
+  }
+
+  // Overexposure: step the camera's exposure compensation down, where the phone exposes it
+  function exposureComp() { const c = trackCaps().exposureCompensation; return c && typeof c === 'object' && 'min' in c ? c : null; }
+  function lowerExposure() {
+    const c = exposureComp(), a = state.auto;
+    if (!c || !state.track) return false;
+    if (Date.now() - a.lastExpStep < 700) return true;
+    const cur = state.expComp !== null && state.expComp !== undefined ? state.expComp : (trackSettings().exposureCompensation || 0);
+    const next = Math.max(c.min, cur - Math.max(c.step || 0, 0.5));
+    if (next >= cur) return false; // already at the minimum
+    a.lastExpStep = Date.now();
+    state.expComp = next;
+    state.track.applyConstraints({ advanced: [{ exposureCompensation: next }] }).catch(() => {});
+    return true;
+  }
+
   function autoTick() {
     if (!state.auto.active) return;
     const a = state.auto, t = thr();
@@ -295,7 +318,8 @@
     const d = D.detectPattern(g.image.data, g.image.width, g.image.height);
     let msg = '', ok = false;
     octxLive.clearRect(0, 0, overlay.width, overlay.height);
-    if (!d.found) msg = 'Se caută modelul cu dungi…';
+    if (d.found) a.notFoundSince = null;
+    if (!d.found) msg = notFoundMsg('Se caută modelul cu dungi…');
     else if (d.touchesBorder) msg = 'Îndepărtați telefonul: întregul model trebuie să fie în interiorul chenarului punctat';
     else if (d.areaFrac < t.minAreaFrac) msg = 'Apropiați telefonul';
     else if (t.useTiltSensor && tiltFresh() && state.tilt.deg > t.maxTiltDeg) msg = 'Țineți telefonul mai aproape de orizontală: ' + Math.round(state.tilt.deg) + '° (max. ' + t.maxTiltDeg + '°)';
@@ -325,10 +349,13 @@
     const toFull = video.videoWidth ? Math.min(video.videoWidth, video.videoHeight * CAPTURE_ASPECT) / g.image.width : 3;
     let msg = '', ok = false;
     octxLive.clearRect(0, 0, overlay.width, overlay.height);
-    if (!d.found) msg = 'Se caută cele trei triunghiuri…';
+    if (d.found) a.notFoundSince = null;
+    const over = d.found && d.fields.some((p) => C.regionStats(g.image.data, g.image.width, g.image.height, p.x, p.y, Math.max(3, p.side * 0.3)).clippedFrac > t.maxClippedFrac);
+    if (!d.found) msg = notFoundMsg('Se caută cele trei triunghiuri…');
     else if (d.multiple) msg = 'Un singur indicator în cadru, vă rog';
     else if (d.touchesBorder) msg = 'Îndepărtați telefonul: triunghiurile trebuie să fie în interiorul chenarului punctat';
     else if (Math.min.apply(null, d.fields.map((p) => p.side)) * toFull * 0.3 < 12) msg = 'Apropiați telefonul';
+    else if (over) msg = lowerExposure() ? 'Prea multă lumină pe indicator: se reduce expunerea…' : 'Prea multă lumină pe indicator: umbriți-l ușor sau schimbați unghiul';
     else if (t.useTiltSensor && tiltFresh() && state.tilt.deg > t.maxTiltDeg) msg = 'Țineți telefonul mai aproape de orizontală: ' + Math.round(state.tilt.deg) + '° (max. ' + t.maxTiltDeg + '°)';
     else ok = true;
     if (d.found) {
@@ -697,7 +724,7 @@
         lockWhiteBalance: state.captureMeta.locks.wb,
         lockFocus: state.captureMeta.locks.focus,
         torch: state.captureMeta.locks.torch,
-        exposureMode: s.exposureMode || '', exposureTime: s.exposureTime ?? '', iso: s.iso ?? '',
+        exposureMode: s.exposureMode || '', exposureTime: s.exposureTime ?? '', iso: s.iso ?? '', exposureCompensation: s.exposureCompensation ?? '',
         whiteBalanceMode: s.whiteBalanceMode || '', colorTemperature: s.colorTemperature ?? '',
         focusMode: s.focusMode || '', focusDistance: s.focusDistance ?? '',
       },
@@ -810,7 +837,7 @@
   }
 
   function download(name, text, mime) {
-    const blob = new Blob([text], { type: mime });
+    const blob = text instanceof Blob ? text : new Blob([text], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = name;
@@ -968,6 +995,7 @@
       ['Mod de expunere', modes('exposureMode')],
       ['Interval pentru timpul de expunere', range('exposureTime')],
       ['Interval ISO', range('iso')],
+      ['Compensarea expunerii', range('exposureCompensation')],
       ['Mod pentru balansul de alb', modes('whiteBalanceMode')],
       ['Interval pentru temperatura de culoare', range('colorTemperature')],
       ['Mod de focalizare', modes('focusMode')],
@@ -1011,6 +1039,12 @@
   $('btnCapture').addEventListener('click', onCaptureClick);
   $('autoCapture').addEventListener('change', (e) => { if (!e.target.checked) stopAuto(); else if (state.track && state.product.autoRegion && !state.auto.active) startAuto(); });
   $('btnAutoRoi').addEventListener('click', autoRegion);
+  // Diagnostic photo: saved on the phone only, on request (never uploaded by the page)
+  $('btnSavePhoto').addEventListener('click', () => {
+    if (!state.frameCanvas) return;
+    const id = ($('sampleId').value.trim() || 'fara-cod').replace(/[^A-Za-z0-9_-]+/g, '-');
+    state.frameCanvas.toBlob((b) => { if (b) download('foto_' + state.product.id + '_' + id + '_' + nowIso().slice(0, 19).replace(/[:T]/g, '-') + '.jpg', b, 'image/jpeg'); }, 'image/jpeg', 0.95);
+  });
   frameCanvas.addEventListener('click', onFrameTap);
   $('roiSize').addEventListener('input', () => {
     if (state.product.method === 'patches') { state.patchSize = null; if (state.patchPts.length === thr().patches) measure(); redraw(); return; }

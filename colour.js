@@ -478,7 +478,7 @@
       const lch = labToLch(f.lab);
       const inBand = hueIn(lch.h, t.passHueMin, t.passHueMax);
       let state = 'other', why = '';
-      if (f.stats && f.stats.clippedFrac > t.maxClippedFrac) { state = 'unreadable'; why = 'reflexie'; }
+      if (f.stats && f.stats.clippedFrac > t.maxClippedFrac) { state = 'unreadable'; why = 'supraexpus sau reflexie'; }
       else if (lch.L < t.minL) { state = 'unreadable'; why = 'prea întunecat'; }
       else if (lch.L > t.maxL) { state = 'unreadable'; why = 'prea luminos'; }
       else if (lch.C < t.minChroma) { state = 'unreadable'; why = 'prea cenușiu (ați atins triunghiul?)'; }
