@@ -137,7 +137,7 @@ The *Iluminare* list matches the columns of the printed session plan:
 
 | Letter | Option in the app | Code stored in the log |
 |---|---|---|
-| A | Lumină rece de tavan (neon / LED alb) | `Cool fluorescent (CSSD)` |
+| A | Lumină rece CSSD (neon / LED alb) | `Cool fluorescent (CSSD)` |
 | B | Lumină caldă (bec / LED cald) | `Warm / LED` |
 | C | Lumină naturală, lângă fereastră | `Daylight near window` |
 | D | Lumină slabă | `Dim` |
