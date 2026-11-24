@@ -4,7 +4,7 @@
   const C = window.Colour;
   const D = window.Detect;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-23.1';
+  const BUILD = '2026-11-24.1';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -68,7 +68,7 @@
   // Interface text is Romanian; values stored in the log stay as stable English codes.
   const KIND_RO = { exposure: 'expunere', wb: 'balans de alb', focus: 'focalizare', torch: 'lanternă' };
   const REF_RO = { purple: 'violet', yellow: 'galben' };
-  const CLS_RO = { pass: 'trecut', fail: 'eșuat', uncertain: 'incert', unknown: 'necunoscut', no_growth: 'trecut', growth: 'eșuat' };
+  const CLS_RO = { pass: 'trecut', fail: 'eșuat', uncertain: 'incert', necitit: 'necitit', unknown: 'necunoscut', no_growth: 'trecut', growth: 'eșuat' };
   const optionText = (selectId, value) => { const o = Array.from($(selectId).options).find((x) => x.value === value); return o ? o.textContent : value; };
 
   // ======================================================================
@@ -228,6 +228,8 @@
     state.frame = g.image;
     state.captureMeta = {
       autoCapture: !!autoInfo,
+      autoWaitSec: autoInfo && state.auto.startedAt ? Math.round((Date.now() - state.auto.startedAt) / 100) / 10 : null,
+      autoLastMessage: '',
       tiltDeg: tiltFresh() ? state.tilt.deg : null,
       settings: trackSettings(),
       locks: Object.assign({}, state.locks),
@@ -264,6 +266,31 @@
   }
   const tiltFresh = () => !!state.tilt && Date.now() - state.tilt.ts < 3000;
 
+  // "Nu s-a putut citi": the automatic scan did not manage to read the object. Records the attempt as "necitit".
+  function notRead() {
+    if (!state.auto.active || !video.videoWidth) return;
+    const waited = Math.round((Date.now() - state.auto.startedAt) / 100) / 10;
+    const lastMsg = $('autoStatus').textContent;
+    stopAuto();
+    capture();                       // keep the frame the camera saw at this moment (no automatic reading)
+    state.captureMeta.autoCapture = true;
+    state.captureMeta.autoWaitSec = waited;
+    state.captureMeta.autoLastMessage = lastMsg;
+    state.lastReading = { method: 'none', cls: 'necitit',
+      reasons: ['citire automată nereușită după ' + String(waited).replace('.', ',') + ' s', 'ultimul mesaj: ' + lastMsg] };
+    showResult();
+    redraw();
+    savePhoto();                     // downloaded to the phone, so it can be sent for analysis
+    $('resultSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function savePhoto() {
+    if (!state.frameCanvas) return;
+    const id = ($('sampleId').value.trim() || 'fara-cod').replace(/[^A-Za-z0-9_-]+/g, '-');
+    const tag = state.lastReading && state.lastReading.cls === 'necitit' ? '_necitit' : '';
+    state.frameCanvas.toBlob((b) => { if (b) download('foto_' + state.product.id + '_' + id + tag + '_' + nowIso().slice(0, 19).replace(/[:T]/g, '-') + '.jpg', b, 'image/jpeg'); }, 'image/jpeg', 0.95);
+  }
+
   function onCaptureClick() {
     if (state.auto.active) { stopAuto(); return; }
     if (!video.videoWidth) return;
@@ -273,6 +300,7 @@
 
   function startAuto() {
     hookOrientation();
+    state.auto.startedAt = Date.now(); $('btnNotRead').classList.remove('hidden');
     state.auto.active = true; state.auto.last = null; state.auto.stable = 0; state.auto.notFoundSince = null; state.auto.lastExpStep = 0;
     $('btnCapture').textContent = 'Anulează';
     $('autoStatus').classList.remove('hidden');
@@ -284,6 +312,7 @@
     if (state.auto.timer) clearTimeout(state.auto.timer);
     state.auto.active = false; state.auto.timer = null;
     $('btnCapture').textContent = 'Fotografiază';
+    $('btnNotRead').classList.add('hidden');
     $('autoStatus').classList.add('hidden');
     octxLive.clearRect(0, 0, overlay.width, overlay.height);
   }
@@ -507,6 +536,7 @@
       else if (state.corners.length === 1) step = 'Atingeți colțul OPUS al modelului imprimat.';
       else step = 'Gata. ' + legend + 'Atingeți imaginea pentru o nouă selecție.';
     }
+    if (state.lastReading && state.lastReading.cls === 'necitit') step = 'Citire marcată ca „necitit”. Completați datele de mai jos și salvați în jurnal. Fotografia a fost descărcată pe telefon.';
     $('stepText').textContent = step;
   }
 
@@ -517,6 +547,7 @@
 
   function onFrameTap(ev) {
     if (!state.frame) return;
+    if (state.lastReading && state.lastReading.cls === 'necitit') { state.lastReading = null; $('resultSection').classList.add('hidden'); } // manual selection replaces it
     const rect = frameCanvas.getBoundingClientRect();
     const x = ((ev.clientX - rect.left) / rect.width) * frameCanvas.width;
     const y = ((ev.clientY - rect.top) / rect.height) * frameCanvas.height;
@@ -639,12 +670,14 @@
     $('resultSection').classList.remove('hidden');
     $('btnSaveLog').disabled = false;
     const box = $('resultBox');
-    box.className = 'result ' + { pass: 'no_growth', fail: 'growth', uncertain: 'uncertain' }[r.cls];
-    box.textContent = state.product.messages[r.cls];
+    box.className = 'result ' + { pass: 'no_growth', fail: 'growth', uncertain: 'uncertain', necitit: 'necitit' }[r.cls];
+    box.textContent = r.cls === 'necitit' ? 'Necitit' : state.product.messages[r.cls];
     $('resultReasons').textContent = r.reasons.join(' · ');
     let rows;
-    if (r.method === 'patches') {
-      const P = r.patches, STATE_RO = { end: 'roz', other: 'nu este roz', unreadable: 'necitit' };
+    if (r.method === 'none') {
+      rows = [['Fotografiere', 'automată, nereușită · timp de așteptare: ' + String(state.captureMeta.autoWaitSec).replace('.', ',') + ' s']];
+    } else if (r.method === 'patches') {
+      const P = r.patches, STATE_RO = { end: 'roz', other: 'nu este roz', unreadable: 'ilizibil' };
       rows = P.fields.map((fl, i) => {
         const p = P.res.patches[i];
         return ['Triunghiul ' + (i + 1), (fl.corr ? swatch(fl.corr.map(C.linearToSrgb)) : '') + STATE_RO[p.state] + (p.state === 'unreadable' ? ' (' + p.why + ')' : '') +
@@ -717,6 +750,8 @@
       {
         cameraLabel: state.captureMeta.cameraLabel,
         autoCapture: state.captureMeta.autoCapture,
+        autoWaitSec: state.captureMeta.autoWaitSec === null || state.captureMeta.autoWaitSec === undefined ? '' : state.captureMeta.autoWaitSec,
+        autoLastMessage: state.captureMeta.autoLastMessage || '',
         tiltDeg: state.captureMeta.tiltDeg === null ? '' : round(state.captureMeta.tiltDeg, 1),
         resolution: state.captureMeta.width + 'x' + state.captureMeta.height,
         videoResolution: state.captureMeta.videoWidth + 'x' + state.captureMeta.videoHeight,
@@ -728,10 +763,10 @@
         whiteBalanceMode: s.whiteBalanceMode || '', colorTemperature: s.colorTemperature ?? '',
         focusMode: s.focusMode || '', focusDistance: s.focusDistance ?? '',
       },
-      r.method === 'vial' ? vialFields(r.vial) : r.method === 'patches' ? patchFields(r.patches) : sheetFields(r),
+      r.method === 'none' ? {} : r.method === 'vial' ? vialFields(r.vial) : r.method === 'patches' ? patchFields(r.patches) : sheetFields(r),
       {
         predicted: predicted,
-        message: state.product.messages[predicted],
+        message: predicted === 'necitit' ? 'Necitit' : state.product.messages[predicted],
         reasons: r.reasons.join(' | '),
         expected: expected,
         match: expected === 'unknown' ? '' : predicted === expected,
@@ -812,8 +847,9 @@
     const correct = judged.filter((e) => e.match === true).length;
     const unsafe = L.filter((e) => e.unsafeError).length;
     const unc = L.filter((e) => e.predicted === 'uncertain').length;
+    const nr = L.filter((e) => e.predicted === 'necitit').length;
     $('logSummary').innerHTML = L.length + ' citiri · ' + correct + '/' + judged.length + ' corespund rezultatului așteptat · ' +
-      unc + ' incerte · ' + (unsafe ? '<span class="warn">' + unsafe + ' NESIGURE</span>' : '0 nesigure');
+      unc + ' incerte · ' + nr + ' necitite · ' + (unsafe ? '<span class="warn">' + unsafe + ' NESIGURE</span>' : '0 nesigure');
     const last = L.slice(-10).reverse();
     $('logTable').innerHTML = last.length
       ? '<tr><th>Nr.</th><th>Ora</th><th>Obiect</th><th>Probă</th><th>Iluminare</th><th>Așteptat</th><th>Citit</th></tr>' +
@@ -1040,11 +1076,8 @@
   $('autoCapture').addEventListener('change', (e) => { if (!e.target.checked) stopAuto(); else if (state.track && state.product.autoRegion && !state.auto.active) startAuto(); });
   $('btnAutoRoi').addEventListener('click', autoRegion);
   // Diagnostic photo: saved on the phone only, on request (never uploaded by the page)
-  $('btnSavePhoto').addEventListener('click', () => {
-    if (!state.frameCanvas) return;
-    const id = ($('sampleId').value.trim() || 'fara-cod').replace(/[^A-Za-z0-9_-]+/g, '-');
-    state.frameCanvas.toBlob((b) => { if (b) download('foto_' + state.product.id + '_' + id + '_' + nowIso().slice(0, 19).replace(/[:T]/g, '-') + '.jpg', b, 'image/jpeg'); }, 'image/jpeg', 0.95);
-  });
+  $('btnSavePhoto').addEventListener('click', savePhoto);
+  $('btnNotRead').addEventListener('click', notRead);
   frameCanvas.addEventListener('click', onFrameTap);
   $('roiSize').addEventListener('input', () => {
     if (state.product.method === 'patches') { state.patchSize = null; if (state.patchPts.length === thr().patches) measure(); redraw(); return; }

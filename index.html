@@ -46,6 +46,7 @@
   .result.no_growth { background:var(--ok); }
   .result.growth { background:var(--bad); }
   .result.uncertain { background:var(--warn); }
+  .result.necitit { background:#5d5d66; }
   table { border-collapse:collapse; width:100%; font-size:13px; }
   td, th { border-bottom:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; }
   pre { white-space:pre-wrap; word-break:break-word; font-size:12px; background:#f1f1f4; padding:8px; border-radius:8px; max-height:340px; overflow:auto; }
@@ -83,6 +84,7 @@
     </div>
     <div id="camControls" class="hidden">
       <button id="btnCapture" class="capture">Fotografiază</button>
+      <button id="btnNotRead" class="secondary hidden" style="display:block;width:100%;margin:0 0 6px">Nu s-a putut citi</button>
       <div class="locks">
         <label id="autoLabel"><input type="checkbox" id="autoCapture" checked> Automat</label>
         <label><input type="checkbox" id="lockExposure"> Expunere</label>
