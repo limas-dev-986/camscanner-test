@@ -131,6 +131,21 @@ Thresholds are editable in section 7, separately for each object. Change them on
 
 Append an entry to `products.js` (id, label, method `vial`, `sheet` or `patches`, its rules, messages, expected-result labels). Use generic labels: the repository is public, so no manufacturer or product names. A new colour scheme that is neither "one region" nor "pattern sheet" needs a new method in `colour.js`.
 
+## Lighting options
+
+The *Iluminare* list matches the columns of the printed session plan:
+
+| Letter | Option in the app | Code stored in the log |
+|---|---|---|
+| A | Lumină rece de tavan (neon / LED alb) | `Cool fluorescent (CSSD)` |
+| B | Lumină caldă (bec / LED cald) | `Warm / LED` |
+| C | Lumină naturală, lângă fereastră | `Daylight near window` |
+| D | Lumină slabă | `Dim` |
+| G | Lanterna telefonului, pornită (with light A still on) | `Phone torch` |
+| – | Altă iluminare (describe it in *Observații*) | `Other` |
+
+Columns E (tilted phone) and F (manual selection) of the plan are not lighting conditions: they are done under light A.
+
 ## Diagnostics
 
 - **Nu s-a putut citi:** shown while the automatic scan is running. One tap records the attempt in the log as `necitit` (not read), with the last message the tool was showing, how long it had been trying, and the usual tester fields; the frame of that moment is downloaded to the phone. Such a reading counts as one of the readings planned for that sample and condition. The log summary counts them separately. `autoWaitSec` is also logged for successful automatic captures.
