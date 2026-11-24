@@ -92,13 +92,15 @@ sheetCase('uniform black, uneven lighting', sheet(BLACK, WHITE, (x) => 0.55 + 0.
 sheetCase('uniform black, warm light', sheet(() => [30, 24, 14], () => [245, 222, 170]), 'pass');
 sheetCase('pink, warm light', sheet(() => [250, 70, 90], () => [245, 222, 170]), 'fail');
 sheetCase('black, one area slightly less black', sheet(centre([70, 70, 72], [22, 22, 24]), WHITE), 'pass');
-sheetCase('black, grey centre (L* ~50)', sheet(centre([110, 110, 112], [22, 22, 24]), WHITE), 'uncertain');
+sheetCase('black, grey centre (L* ~50)', sheet(centre([110, 110, 112], [22, 22, 24]), WHITE), 'fail'); // tightened 2026-11-24
 sheetCase('black, light grey centre (L* ~60)', sheet(centre([140, 140, 142], [22, 22, 24]), WHITE), 'fail');
 sheetCase('black, overexposed paper (pure white)', sheet(() => [70, 70, 72], () => [255, 255, 255]), 'pass');
 sheetCase('pink, overexposed paper', sheet(PINK, () => [255, 255, 255]), 'fail');
 sheetCase('black, reflection hides centre stripes', sheet(centre([255, 255, 255], [22, 22, 24]), WHITE), 'fail');
-sheetCase('grey stripes (L* ~55)', sheet(() => [125, 125, 127], WHITE), 'uncertain');
-sheetCase('uniform dark grey (L* ~44)', sheet(() => [95, 95, 95], WHITE), 'pass');
+sheetCase('grey stripes (L* ~55)', sheet(() => [125, 125, 127], WHITE), 'fail'); // tightened 2026-11-24
+sheetCase('dark grey stripes (L* ~47)', sheet(() => [104, 104, 106], WHITE), 'uncertain');
+sheetCase('uniform dark grey (L* ~44)', sheet(() => [95, 95, 95], WHITE), 'uncertain'); // tightened 2026-11-24
+sheetCase('uniform very dark grey (L* ~36)', sheet(() => [75, 75, 76], WHITE), 'pass');
 const blank = new Uint8ClampedArray(100 * 100 * 4).fill(235);
 check('sheet: blank paper -> uncertain', C.analyseSheet(blank, 100, 100, { x0: 0, y0: 0, x1: 100, y1: 100 }).cls === 'uncertain');
 

@@ -257,6 +257,8 @@
 
   // ---------- Sheet analysis (Bowie & Dick: pink stripes -> uniformly black) ----------
   // DECISION 2026-11-19 (project owner): do NOT loosen the pass limits below (passInkL, passWorstCellL,
+  // Tightened 2026-11-24 after 100 phone readings: black sheets read median L* 8-43 / lightest area 14-47,
+  // washed-out pink sheets in daylight down to 49 / 51. Tightening further is allowed.
   // passSpreadL, passPinkFrac, passCellPinkFrac, maxClippedFrac) until readings from a REAL failed
   // Bowie & Dick sheet (faulty cycle: greyish / lighter centre / pink left) have been logged and reviewed.
   const SHEET_DEFAULTS = {
@@ -270,12 +272,12 @@
     pinkHueMax: 40,
     passPinkFrac: 0.02,     // pass: pink share of stripe pixels, whole sheet
     passCellPinkFrac: 0.05, // pass: pink share in the worst cell
-    passInkL: 45,           // pass: median stripe darkness (relative L*), lower = blacker
+    passInkL: 40,           // pass: median stripe darkness (relative L*), lower = blacker (tightened 2026-11-24, was 45)
     passSpreadL: 25,        // pass: max difference in stripe darkness between the darkest and the lightest area
-    passWorstCellL: 52,     // pass: the lightest area's stripe darkness must still be at or below this (black enough)
+    passWorstCellL: 47,     // pass: the lightest area's stripe darkness must still be at or below this (tightened 2026-11-24, was 52)
     failPinkFrac: 0.10,     // fail: pink share, whole sheet
     failCellPinkFrac: 0.20, // fail: pink share in any cell
-    failInkL: 60,           // fail: stripes clearly not dark
+    failInkL: 50,           // fail: stripes clearly not dark (tightened 2026-11-24, was 60)
     failSpreadL: 20,        // fail: clearly uneven darkening (e.g. lighter centre), when the lightest area is not black
     passInkRatio: 0.6,      // pass: every cell has at least this share of the typical stripe density
     failInkRatio: 0.35,     // fail: a cell with less stripe density than this = faint / unchanged area

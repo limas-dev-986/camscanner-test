@@ -4,7 +4,7 @@
   const C = window.Colour;
   const D = window.Detect;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-24.5';
+  const BUILD = '2026-11-24.6';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -16,7 +16,7 @@
       try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (e) { return false; }
     },
   };
-  const K = { log: 'bi-test-log', refs: 'bi-test-refs', thr: 'bi-test-thresholds-v4', thrOld: 'bi-test-thresholds', session: 'bi-test-session' };
+  const K = { log: 'bi-test-log', refs: 'bi-test-refs', thr: 'bi-test-thresholds-v5', thrOld: 'bi-test-thresholds', session: 'bi-test-session' };
 
   // Each object carries its own colour rules (products.js); these are the defaults for the settings section.
   const rulesOf = (p) => p.rules;
@@ -25,6 +25,8 @@
     const saved = store.get(K.thr, null) || {};
     const old = store.get(K.thrOld, null); // build .1 stored vial thresholds flat
     if (old && !saved['bi-vial']) saved['bi-vial'] = old;
+    const v4 = store.get('bi-test-thresholds-v4', null); // sheet values reset again in build 2026-11-24.6 (tightened)
+    if (v4) ['bi-vial', 't5-strip'].forEach((id) => { if (v4[id] && !saved[id]) saved[id] = v4[id]; });
     const v3 = store.get('bi-test-thresholds-v3', null); // sheet values reset again in build .8
     if (v3 && v3['bi-vial'] && !saved['bi-vial']) saved['bi-vial'] = v3['bi-vial'];
     const v2 = store.get('bi-test-thresholds-v2', null); // keep edited vial values; sheet values reset to new defaults (build .5)
