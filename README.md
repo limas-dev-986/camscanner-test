@@ -133,15 +133,15 @@ Append an entry to `products.js` (id, label, method `vial`, `sheet` or `patches`
 
 ## Lighting options
 
-The *Iluminare* list matches the columns of the printed session plan:
+The *Iluminare* options carry the same names as the columns of the printed session plan; the app adds a short description in brackets:
 
 | Letter | Option in the app | Code stored in the log |
 |---|---|---|
 | A | Lumină rece CSSD (neon / LED alb) | `Cool fluorescent (CSSD)` |
 | B | Lumină caldă (bec / LED cald) | `Warm / LED` |
-| C | Lumină naturală, lângă fereastră | `Daylight near window` |
-| D | Lumină slabă | `Dim` |
-| G | Lanterna telefonului, pornită (with light A still on) | `Phone torch` |
+| C | Lumină naturală (lângă fereastră) | `Daylight near window` |
+| D | Lumină slabă (încăpere slab luminată) | `Dim` |
+| G | Lanternă (lanterna telefonului pornită, lumina CSSD aprinsă) | `Phone torch` |
 | – | Altă iluminare (describe it in *Observații*) | `Other` |
 
 Columns E (tilted phone) and F (manual selection) of the plan are not lighting conditions: they are done under light A.
