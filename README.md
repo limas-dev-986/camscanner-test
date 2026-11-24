@@ -155,6 +155,7 @@ The tick box *Telefon înclinat intenționat (coloana E)* marks the tilted-phone
 ## Diagnostics
 
 - **Nu s-a putut citi:** shown while the automatic scan is running. One tap records the attempt in the log as `necitit` (not read), with the last message the tool was showing, how long it had been trying, and the usual tester fields; the frame of that moment is downloaded to the phone. Such a reading counts as one of the readings planned for that sample and condition. The log summary counts them separately. `autoWaitSec` is also logged for successful automatic captures.
+- **Wait breakdown (automatic capture):** every automatic reading logs how many seconds each waiting message was on screen: `wait_search` (looking for the object, incl. the wrong-object hint), `wait_tooClose`, `wait_tooFar`, `wait_tilt`, `wait_perspective`, `wait_overexposed`, `wait_multiple`, `wait_hold` (holding still), `wait_other`. Also `holdBreaks` (how often "hold still" restarted because the phone moved), `liveChecks` (number of live checks) and `detectMsAvg` (average time of one check on this phone). The result table shows the same breakdown under *Timp de așteptare*.
 - **Wrong object selected:** if nothing is found for 5 seconds during automatic scanning, the tool suggests checking the selected object.
 - **Salvează fotografia** downloads the captured frame to the phone, so that a failing case can be analysed. The page never uploads it. Photos show the product's printed label: **never commit them to this public repository.**
 

@@ -4,7 +4,7 @@
   const C = window.Colour;
   const D = window.Detect;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-24.6';
+  const BUILD = '2026-11-24.7';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -232,6 +232,7 @@
       autoCapture: !!autoInfo,
       autoWaitSec: autoInfo && state.auto.startedAt ? Math.round((Date.now() - state.auto.startedAt) / 100) / 10 : null,
       autoLastMessage: '',
+      autoWaits: autoInfo && autoInfo.waits ? autoInfo.waits : null,
       tiltDeg: tiltFresh() ? state.tilt.deg : null,
       settings: trackSettings(),
       locks: Object.assign({}, state.locks),
@@ -273,9 +274,12 @@
     if (!state.auto.active || !video.videoWidth) return;
     const waited = Math.round((Date.now() - state.auto.startedAt) / 100) / 10;
     const lastMsg = $('autoStatus').textContent;
+    noteWait(lastMsg);
+    const waits = waitSnapshot();
     stopAuto();
     capture();                       // keep the frame the camera saw at this moment (no automatic reading)
     state.captureMeta.autoCapture = true;
+    state.captureMeta.autoWaits = waits;
     state.captureMeta.autoWaitSec = waited;
     state.captureMeta.autoLastMessage = lastMsg;
     state.lastReading = { method: 'none', cls: 'necitit',
@@ -303,6 +307,7 @@
   function startAuto() {
     hookOrientation();
     state.auto.startedAt = Date.now(); $('btnNotRead').classList.remove('hidden');
+    state.auto.waits = {}; state.auto.lastKey = null; state.auto.lastTickAt = Date.now(); state.auto.holdBreaks = 0; state.auto.ticks = 0; state.auto.detectMs = 0;
     state.auto.active = true; state.auto.last = null; state.auto.stable = 0; state.auto.notFoundSince = null; state.auto.lastExpStep = 0;
     $('btnCapture').textContent = 'Anulează';
     $('autoStatus').classList.remove('hidden');
@@ -341,12 +346,48 @@
     return true;
   }
 
+  // ---- Wait diagnostics: how long each waiting message was on screen (seconds) ----
+  const WAIT_KEYS = ['search', 'tooClose', 'tooFar', 'tilt', 'perspective', 'overexposed', 'multiple', 'hold', 'other'];
+  function waitKey(msg) {
+    if (/^Se caută|^Nu s-a găsit nimic/.test(msg)) return 'search';
+    if (/^Îndepărtați/.test(msg)) return 'tooClose';
+    if (/^Apropiați/.test(msg)) return 'tooFar';
+    if (/orizontală/.test(msg)) return 'tilt';
+    if (/paralel/.test(msg)) return 'perspective';
+    if (/^Prea multă lumină/.test(msg)) return 'overexposed';
+    if (/^Un singur indicator/.test(msg)) return 'multiple';
+    if (/^Nu mișcați/.test(msg)) return 'hold';
+    return 'other';
+  }
+  function noteWait(msg) { // time since the last tick goes to the message shown during it
+    const a = state.auto, now = Date.now();
+    if (a.lastKey) a.waits[a.lastKey] = (a.waits[a.lastKey] || 0) + (now - a.lastTickAt);
+    a.lastKey = waitKey(msg); a.lastTickAt = now;
+  }
+  const WAIT_RO = { search: 'căutare', tooClose: 'prea aproape', tooFar: 'prea departe', tilt: 'înclinare', perspective: 'perspectivă',
+    overexposed: 'prea multă lumină', multiple: 'mai multe obiecte', hold: 'nemișcare', other: 'altele' };
+  function waitText(w) {
+    const parts = WAIT_KEYS.filter((k) => w[k] > 0).map((k) => WAIT_RO[k] + ' ' + String(w[k]).replace('.', ',') + ' s');
+    return (parts.join(' · ') || '—') + ' · nemișcare întreruptă de ' + w.holdBreaks + ' ori · ' + w.ticks + ' verificări, ' + w.detectMsAvg + ' ms/verificare';
+  }
+  function noteStable(prev) { if (prev > 0 && state.auto.stable === 0) state.auto.holdBreaks++; }
+  function waitSnapshot() {
+    const a = state.auto, o = {};
+    WAIT_KEYS.forEach((k) => { o[k] = Math.round((a.waits[k] || 0) / 100) / 10; });
+    o.holdBreaks = a.holdBreaks || 0;
+    o.ticks = a.ticks || 0;
+    o.detectMsAvg = a.ticks ? Math.round(a.detectMs / a.ticks) : '';
+    return o;
+  }
+
   function autoTick() {
     if (!state.auto.active) return;
     const a = state.auto, t = thr();
     const g = grabFrame(overlay.width, liveCanvas);
     if (state.product.method === 'patches') { autoTickPatches(g); return; }
+    const t0 = performance.now();
     const d = D.detectPattern(g.image.data, g.image.width, g.image.height);
+    a.ticks++; a.detectMs += performance.now() - t0;
     let msg = '', ok = false;
     octxLive.clearRect(0, 0, overlay.width, overlay.height);
     if (d.found) a.notFoundSince = null;
@@ -364,11 +405,14 @@
     }
     if (ok) {
       const moved = a.last ? Math.max.apply(null, d.corners.map((p, i) => Math.hypot(p.x - a.last[i].x, p.y - a.last[i].y))) : Infinity;
+      const prevStable = a.stable;
       a.stable = moved < 0.03 * g.image.width ? a.stable + 1 : 0;
+      noteStable(prevStable);
       a.last = d.corners;
       msg = 'Nu mișcați telefonul…';
-      if (a.stable >= 3) { stopAuto(); capture({ auto: true }); return; }
-    } else { a.stable = 0; a.last = null; }
+      if (a.stable >= 3) { noteWait(msg); const w = waitSnapshot(); stopAuto(); capture({ auto: true, waits: w }); return; }
+    } else { if (a.stable > 0) a.holdBreaks++; a.stable = 0; a.last = null; }
+    noteWait(msg);
     $('autoStatus').textContent = msg;
     a.timer = setTimeout(autoTick, 150);
   }
@@ -376,7 +420,9 @@
   // Live check for objects with separate indicator fields (triangles)
   function autoTickPatches(g) {
     const a = state.auto, t = thr();
+    const t0 = performance.now();
     const d = D.detectPatches(g.image.data, g.image.width, g.image.height);
+    a.ticks++; a.detectMs += performance.now() - t0;
     const toFull = video.videoWidth ? Math.min(video.videoWidth, video.videoHeight * CAPTURE_ASPECT) / g.image.width : 3;
     let msg = '', ok = false;
     octxLive.clearRect(0, 0, overlay.width, overlay.height);
@@ -395,11 +441,14 @@
     }
     if (ok) {
       const moved = a.last ? Math.max.apply(null, d.fields.map((p, i) => Math.hypot(p.x - a.last[i].x, p.y - a.last[i].y))) : Infinity;
+      const prevStable = a.stable;
       a.stable = moved < 0.03 * g.image.width ? a.stable + 1 : 0;
+      noteStable(prevStable);
       a.last = d.fields;
       msg = 'Nu mișcați telefonul…';
-      if (a.stable >= 3) { stopAuto(); capture({ auto: true }); return; }
-    } else { a.stable = 0; a.last = null; }
+      if (a.stable >= 3) { noteWait(msg); const w = waitSnapshot(); stopAuto(); capture({ auto: true, waits: w }); return; }
+    } else { if (a.stable > 0) a.holdBreaks++; a.stable = 0; a.last = null; }
+    noteWait(msg);
     $('autoStatus').textContent = msg;
     a.timer = setTimeout(autoTick, 150);
   }
@@ -717,6 +766,7 @@
         ['Fotografiere', (state.captureMeta.autoCapture ? 'automată' : 'manuală') + (state.captureMeta.tiltDeg === null ? ' · fără date de la senzorul de înclinare' : ' · înclinarea telefonului: ' + fmt(state.captureMeta.tiltDeg, 0) + '°')],
       ];
     }
+    if (state.captureMeta && state.captureMeta.autoWaits) rows.push(['Timp de așteptare', waitText(state.captureMeta.autoWaits)]);
     $('resultTable').innerHTML = rows.map((x) => '<tr><th>' + x[0] + '</th><td>' + x[1] + '</td></tr>').join('');
     $('saveStatus').textContent = '';
   }
@@ -754,6 +804,12 @@
         autoCapture: state.captureMeta.autoCapture,
         autoWaitSec: state.captureMeta.autoWaitSec === null || state.captureMeta.autoWaitSec === undefined ? '' : state.captureMeta.autoWaitSec,
         autoLastMessage: state.captureMeta.autoLastMessage || '',
+        ...(() => { // seconds spent under each waiting message, plus how often "hold still" restarted
+          const w = state.captureMeta.autoWaits, o = {};
+          WAIT_KEYS.forEach((k) => { o['wait_' + k] = w ? w[k] : ''; });
+          o.holdBreaks = w ? w.holdBreaks : ''; o.liveChecks = w ? w.ticks : ''; o.detectMsAvg = w ? w.detectMsAvg : '';
+          return o;
+        })(),
         tiltDeg: state.captureMeta.tiltDeg === null ? '' : round(state.captureMeta.tiltDeg, 1),
         resolution: state.captureMeta.width + 'x' + state.captureMeta.height,
         videoResolution: state.captureMeta.videoWidth + 'x' + state.captureMeta.videoHeight,
