@@ -146,6 +146,12 @@ The *Iluminare* options carry the same names as the columns of the printed sessi
 
 Columns E (tilted phone) and F (manual selection) of the plan are not lighting conditions: they are done under light A.
 
+## Sample position (readings 1–5)
+
+The *Poziția probei* list matches the five placements of the printed plan: 1 straight and centred, 2 rotated about 15°, 3 off-centre inside the dashed frame, 4 phone a little higher, 5 phone a little lower (plus *Altă poziție*). After each save it moves on to the next placement (5 goes back to 1). Logged codes: `1 Straight, centred` … `5 Phone lower`.
+
+The tick box *Telefon înclinat intenționat (coloana E)* marks the tilted-phone column; it is logged as `phoneTilted` and stays ticked until unticked. The phone's measured tilt is logged separately (`tiltDeg`).
+
 ## Diagnostics
 
 - **Nu s-a putut citi:** shown while the automatic scan is running. One tap records the attempt in the log as `necitit` (not read), with the last message the tool was showing, how long it had been trying, and the usual tester fields; the frame of that moment is downloaded to the phone. Such a reading counts as one of the readings planned for that sample and condition. The log summary counts them separately. `autoWaitSec` is also logged for successful automatic captures.

@@ -4,7 +4,7 @@
   const C = window.Colour;
   const D = window.Detect;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-24.4';
+  const BUILD = '2026-11-24.5';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -773,6 +773,7 @@
         unsafeError: expected === 'fail' && predicted === 'pass',
         lighting: $('lighting').value,
         angle: $('angle').value,
+        phoneTilted: $('phoneTilted').checked,
         sampleId: $('sampleId').value.trim(),
         note: $('note').value.trim(),
         thresholds: JSON.stringify(thr()),
@@ -783,6 +784,9 @@
     $('saveStatus').innerHTML = ok ? 'Salvat (nr. ' + state.log.length + ').' : '<span class="warn">Salvat doar cât timp pagina rămâne deschisă: stocarea în browser nu este disponibilă. Exportați înainte de a închide pagina.</span>';
     if (entry.unsafeError) $('saveStatus').innerHTML += ' <span class="warn">EROARE NESIGURĂ: o probă eșuată a fost citită ca trecută. Semnal de oprire, conform planului de test.</span>';
     renderLog();
+    // Next reading of the series: placement 1 -> 2 -> ... -> 5 -> 1
+    const pos = $('angle').value, n = parseInt(pos, 10);
+    if (n >= 1 && n <= 5) { $('angle').selectedIndex = n % 5; saveSession(); }
   }
 
   function vialFields(v) {
@@ -1053,7 +1057,7 @@
   }
 
   function saveSession() {
-    store.set(K.session, { deviceLabel: $('deviceLabel').value, sessionCode: $('sessionCode').value, lighting: $('lighting').value, angle: $('angle').value, product: state.product.id });
+    store.set(K.session, { deviceLabel: $('deviceLabel').value, sessionCode: $('sessionCode').value, lighting: $('lighting').value, angle: $('angle').value, phoneTilted: $('phoneTilted').checked, product: state.product.id });
   }
   function loadSession() {
     const s = store.get(K.session, {});
@@ -1061,6 +1065,8 @@
     if (s.sessionCode) $('sessionCode').value = s.sessionCode;
     if (s.lighting) $('lighting').value = s.lighting;
     if (s.angle) $('angle').value = s.angle;
+    if ($('angle').selectedIndex < 0) $('angle').selectedIndex = 0; // value from an older build
+    if (s.phoneTilted) $('phoneTilted').checked = true;
     return s.product;
   }
 
@@ -1112,7 +1118,7 @@
     setTimeout(() => ($('btnCapCopy').textContent = 'Copiază'), 2500);
   });
   $('btnCapExport').addEventListener('click', () => download(fileStem() + '_capabilities.json', JSON.stringify(state.capReport, null, 2), 'application/json'));
-  ['deviceLabel', 'sessionCode', 'lighting', 'angle'].forEach((id) => $(id).addEventListener('change', saveSession));
+  ['deviceLabel', 'sessionCode', 'lighting', 'angle', 'phoneTilted'].forEach((id) => $(id).addEventListener('change', saveSession));
 
   $('buildId').textContent = BUILD;
   const savedProduct = loadSession();

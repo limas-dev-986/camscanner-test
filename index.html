@@ -141,14 +141,18 @@
           <option value="Other">Altă iluminare (descrieți în Observații)</option>
         </select>
       </label>
-      <label>Unghi / distanță
+      <label>Poziția probei (citirea 1–5)
         <select id="angle">
-          <option value="Recommended position">Poziția recomandată</option>
-          <option value="Tilted ~20°">Înclinat cu aproximativ 20°</option>
-          <option value="Other">Altă poziție</option>
+          <option value="1 Straight, centred">1. Dreaptă și centrată</option>
+          <option value="2 Rotated ~15°">2. Rotită cu aproximativ 15°</option>
+          <option value="3 Off-centre">3. Descentrată, dar în interiorul chenarului punctat</option>
+          <option value="4 Phone higher">4. Telefonul puțin mai sus (proba pare mai mică)</option>
+          <option value="5 Phone lower">5. Telefonul puțin mai jos (proba pare mai mare)</option>
+          <option value="Other">Altă poziție (descrieți în Observații)</option>
         </select>
+        <span style="display:flex;gap:6px;align-items:center;margin-top:4px;color:var(--fg)"><input type="checkbox" id="phoneTilted"> Telefon înclinat intenționat (coloana E)</span>
       </label>
-      <label>Codul probei (de ex. P1, N2)
+      <label>Codul probei (de ex. BD-N1, T5-R2)
         <input type="text" id="sampleId" maxlength="20" autocomplete="off">
       </label>
     </div>
