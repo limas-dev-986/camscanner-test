@@ -4,7 +4,7 @@
   const C = window.Colour;
   const D = window.Detect;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-25.1';
+  const BUILD = '2026-11-25.2';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -16,7 +16,7 @@
       try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (e) { return false; }
     },
   };
-  const K = { log: 'bi-test-log', refs: 'bi-test-refs', thr: 'bi-test-thresholds-v5', thrOld: 'bi-test-thresholds', session: 'bi-test-session' };
+  const K = { log: 'bi-test-log', refs: 'bi-test-refs', thr: 'bi-test-thresholds-v5', thrOld: 'bi-test-thresholds', session: 'bi-test-session', cam: 'bi-test-best-camera' };
 
   // Each object carries its own colour rules (products.js); these are the defaults for the settings section.
   const rulesOf = (p) => p.rules;
@@ -101,16 +101,91 @@
   // ======================================================================
   // Camera
   // ======================================================================
+  // ---- Best back camera: chosen automatically for every object ----
+  // Phones expose several back cameras (main, ultra-wide, telephoto, macro, depth). For reading colours up close
+  // the main camera is best: it has autofocus, the torch and the highest resolution. Each back camera is opened
+  // briefly once, scored, and the choice is remembered for this set of cameras (re-checked if the list changes).
+  const CAM_AVOID = /ultra.?wide|ultrawide|\buw\b|macro|depth|tele|zoom|infra|\bir\b|tof/i;
+  function camIndex(label) { const m = /camera2?\s*(\d+)/i.exec(label || ''); return m ? +m[1] : 99; }
+  function scoreCamera(c) {
+    const caps = c.caps || {}, fm = caps.facingMode || [], label = c.label || '';
+    const back = fm.indexOf('environment') !== -1 || /back|rear|environment|spate/i.test(label);
+    const focus = caps.focusMode || [];
+    const w = caps.width && caps.width.max || 0, h = caps.height && caps.height.max || 0;
+    let s = 0;
+    if (back) s += 1000;
+    if (focus.indexOf('continuous') !== -1) s += 300; else if (focus.length > 1) s += 150;
+    if ('torch' in caps) s += 100;
+    s += Math.min(12, (w * h) / 1e6) * 10;
+    if (CAM_AVOID.test(label)) s -= 400;
+    if (/dual|triple/i.test(label)) s -= 50; // virtual cameras switch lenses on their own (colour may jump)
+    s -= Math.min(camIndex(label), 20) * 5; // Android numbers the main back camera 0
+    return Math.round(s);
+  }
+  async function probeCamera(dev) {
+    let st = null;
+    try {
+      st = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: dev.deviceId } }, audio: false });
+      const t = st.getVideoTracks()[0];
+      return { deviceId: dev.deviceId, label: t.label || dev.label, caps: t.getCapabilities ? t.getCapabilities() : {} };
+    } catch (e) { return { deviceId: dev.deviceId, label: dev.label, caps: {}, error: e.name };
+    } finally { if (st) st.getTracks().forEach((t) => t.stop()); }
+  }
+  async function chooseBestCamera(status) {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput' && d.deviceId);
+    if (devs.length < 2) return devs.length ? { deviceId: devs[0].deviceId, label: devs[0].label, ranked: [], cached: false } : null;
+    const sig = devs.map((d) => d.deviceId).join('|');
+    const cached = store.get(K.cam, null);
+    if (cached && cached.sig === sig && devs.some((d) => d.deviceId === cached.deviceId)) return Object.assign({ cached: true }, cached);
+    // Only test the back cameras when the labels say which they are; otherwise test all
+    let cand = devs.filter((d) => !/front|user|selfie|fa[țt]ă/i.test(d.label));
+    if (!cand.length) cand = devs;
+    const ranked = [];
+    for (let i = 0; i < cand.length; i++) {
+      status.textContent = 'Se alege cea mai bună cameră (' + (i + 1) + ' din ' + cand.length + ')…';
+      const c = await probeCamera(cand[i]);
+      if (c.error) continue;
+      c.score = scoreCamera(c);
+      ranked.push({ deviceId: c.deviceId, label: c.label, score: c.score,
+        res: (c.caps.width && c.caps.width.max || '?') + '×' + (c.caps.height && c.caps.height.max || '?'),
+        focus: (c.caps.focusMode || []).join('/') || '—', torch: 'torch' in (c.caps || {}) });
+    }
+    if (!ranked.length) return null;
+    ranked.sort((a, b) => b.score - a.score);
+    const out = { sig, deviceId: ranked[0].deviceId, label: ranked[0].label, ranked, at: nowIso() };
+    store.set(K.cam, out);
+    return Object.assign({ cached: false }, out);
+  }
+
   async function startCamera(deviceId) {
     const status = $('camStatus');
     if (!window.isSecureContext) { status.innerHTML = '<span class="warn">Pagina nu este deschisă printr-o conexiune securizată (HTTPS). Camera nu va funcționa.</span>'; return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { status.innerHTML = '<span class="warn">Acest browser nu permite accesul la cameră (getUserMedia).</span>'; return; }
     stopCamera();
+    // No camera chosen in the list: pick the best back camera (same for every object)
+    state.cameraChoice = null;
+    if (!deviceId) {
+      try {
+        let ch = await chooseBestCamera(status);
+        if (!ch) { // labels and ids are hidden until camera permission: ask once, then choose
+          const tmp = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+          tmp.getTracks().forEach((t) => t.stop());
+          ch = await chooseBestCamera(status);
+        }
+        if (ch) { deviceId = ch.deviceId; state.cameraChoice = ch; }
+      } catch (e) { /* fall back to the browser's own back camera */ }
+    } else state.cameraChoice = { manual: true };
     const video_c = deviceId
       ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
       : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } };
     try {
-      state.stream = await navigator.mediaDevices.getUserMedia({ video: video_c, audio: false });
+      try {
+        state.stream = await navigator.mediaDevices.getUserMedia({ video: video_c, audio: false });
+      } catch (e) {
+        if (!state.cameraChoice || state.cameraChoice.manual) throw e;
+        store.set(K.cam, null); state.cameraChoice = null; // remembered camera no longer opens: let the browser choose
+        state.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+      }
     } catch (e) {
       status.innerHTML = '<span class="warn">Eroare la pornirea camerei: ' + escapeHtml(e.name + ' ' + e.message) + '</span>';
       return;
@@ -125,7 +200,9 @@
     state.expComp = null;
     ['lockExposure', 'lockWB', 'lockFocus', 'torch'].forEach((id) => ($(id).checked = false));
     try { state.imageCapture = 'ImageCapture' in window ? new ImageCapture(state.track) : null; } catch (e) { state.imageCapture = null; }
-    status.textContent = 'Cameră: ' + (state.track.label || 'fără nume') + ' · ' + video.videoWidth + '×' + video.videoHeight;
+    const ch = state.cameraChoice, nBack = ch && ch.ranked ? ch.ranked.length : 0;
+    status.textContent = 'Cameră: ' + (state.track.label || 'fără nume') + ' · ' + video.videoWidth + '×' + video.videoHeight +
+      (ch && ch.manual ? ' · aleasă manual' : ch && nBack > 1 ? ' · cea mai bună din ' + nBack + ' camere (aleasă automat)' : ch ? ' · aleasă automat' : '');
     $('btnStart').textContent = 'Repornește camera';
     await listCameras();
     updateLockAvailability();
@@ -238,6 +315,7 @@
       locks: Object.assign({}, state.locks),
       width: w, height: h, videoWidth: vw, videoHeight: vh,
       cameraLabel: state.track ? state.track.label : '',
+      cameraChoice: state.cameraChoice ? (state.cameraChoice.manual ? 'manual' : 'auto') : 'browser',
     };
     frameCanvas.width = w; frameCanvas.height = h;
     resetRegions();
@@ -811,6 +889,7 @@
       deviceInfo(),
       {
         cameraLabel: state.captureMeta.cameraLabel,
+        cameraChoice: state.captureMeta.cameraChoice || '',
         autoCapture: state.captureMeta.autoCapture,
         autoWaitSec: state.captureMeta.autoWaitSec === null || state.captureMeta.autoWaitSec === undefined ? '' : state.captureMeta.autoWaitSec,
         autoLastMessage: state.captureMeta.autoLastMessage || '',
@@ -1073,6 +1152,7 @@
     } catch (e) { rep.barcodeError = String(e); }
     if (state.track) {
       rep.track = { label: state.track.label, settings: trackSettings(), capabilities: trackCaps() };
+      const saved = store.get(K.cam, null); if (saved && saved.ranked) rep.cameras = saved.ranked;
       try { rep.track.constraints = state.track.getConstraints(); } catch (e) { /* ignore */ }
       if (state.imageCapture && state.imageCapture.getPhotoCapabilities) {
         try {
@@ -1100,6 +1180,7 @@
       ['Conexiune securizată (HTTPS)', yn(rep.secureContext)],
       ['Acces la cameră (getUserMedia)', yn(rep.getUserMedia)],
       ['Cameră pornită', rep.track ? 'da: ' + escapeHtml(rep.track.label || '') : 'nu (porniți camera)'],
+      ['Camere spate testate (scor)', rep.cameras && rep.cameras.length ? rep.cameras.map((c) => escapeHtml(c.label || '?') + ': ' + c.score + ' (' + c.res + ', focalizare ' + escapeHtml(c.focus) + ', lanternă ' + (c.torch ? 'da' : 'nu') + ')').join('<br>') : 'o singură cameră sau încă netestate'],
       ['Mod de expunere', modes('exposureMode')],
       ['Interval pentru timpul de expunere', range('exposureTime')],
       ['Interval ISO', range('iso')],

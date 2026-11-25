@@ -75,6 +75,10 @@ Without calibration, the tool uses fixed hue bands only. With calibration, a pur
 
 Green samples are hard to obtain, so the yellow/green band is set wide on purpose. Any orange, yellow or green hue counts as a colour change.
 
+### Camera choice (all objects)
+
+*Pornește camera* always starts the best back camera of the phone, whatever object is selected. The first time, the tool briefly opens each back camera (front cameras are skipped) and scores it: back-facing, continuous autofocus, torch, highest resolution; ultra-wide, telephoto, macro and depth cameras are marked down, and on Android the lowest camera number (camera 0, normally the main camera) wins a tie. The choice is remembered on the phone and checked again only when the camera list changes; if the remembered camera no longer opens, the browser's own back camera is used. The camera list next to the preview still allows a manual choice for a test; pressing *Repornește camera* returns to the automatic choice. The status line says whether the camera was chosen automatically, the capability report lists every back camera tested with its score, and each log entry records `cameraChoice` (auto / manual / browser) next to `cameraLabel`.
+
 ## How the classification works
 
 ### Vial (biological indicator)
