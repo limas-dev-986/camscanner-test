@@ -4,7 +4,7 @@
   const C = window.Colour;
   const D = window.Detect;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-24.7';
+  const BUILD = '2026-11-25.1';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -347,7 +347,7 @@
   }
 
   // ---- Wait diagnostics: how long each waiting message was on screen (seconds) ----
-  const WAIT_KEYS = ['search', 'tooClose', 'tooFar', 'tilt', 'perspective', 'overexposed', 'multiple', 'hold', 'other'];
+  const WAIT_KEYS = ['search', 'tooClose', 'tooFar', 'tilt', 'perspective', 'overexposed', 'glare', 'multiple', 'hold', 'other'];
   function waitKey(msg) {
     if (/^Se caută|^Nu s-a găsit nimic/.test(msg)) return 'search';
     if (/^Îndepărtați/.test(msg)) return 'tooClose';
@@ -355,6 +355,7 @@
     if (/orizontală/.test(msg)) return 'tilt';
     if (/paralel/.test(msg)) return 'perspective';
     if (/^Prea multă lumină/.test(msg)) return 'overexposed';
+    if (/^Reflexie/.test(msg)) return 'glare';
     if (/^Un singur indicator/.test(msg)) return 'multiple';
     if (/^Nu mișcați/.test(msg)) return 'hold';
     return 'other';
@@ -365,7 +366,7 @@
     a.lastKey = waitKey(msg); a.lastTickAt = now;
   }
   const WAIT_RO = { search: 'căutare', tooClose: 'prea aproape', tooFar: 'prea departe', tilt: 'înclinare', perspective: 'perspectivă',
-    overexposed: 'prea multă lumină', multiple: 'mai multe obiecte', hold: 'nemișcare', other: 'altele' };
+    overexposed: 'prea multă lumină', glare: 'reflexie', multiple: 'mai multe obiecte', hold: 'nemișcare', other: 'altele' };
   function waitText(w) {
     const parts = WAIT_KEYS.filter((k) => w[k] > 0).map((k) => WAIT_RO[k] + ' ' + String(w[k]).replace('.', ',') + ' s');
     return (parts.join(' · ') || '—') + ' · nemișcare întreruptă de ' + w.holdBreaks + ' ori · ' + w.ticks + ' verificări, ' + w.detectMsAvg + ' ms/verificare';
@@ -421,23 +422,26 @@
   function autoTickPatches(g) {
     const a = state.auto, t = thr();
     const t0 = performance.now();
-    const d = D.detectPatches(g.image.data, g.image.width, g.image.height);
+    const d = D.detectStrip(g.image.data, g.image.width, g.image.height);
     a.ticks++; a.detectMs += performance.now() - t0;
     const toFull = video.videoWidth ? Math.min(video.videoWidth, video.videoHeight * CAPTURE_ASPECT) / g.image.width : 3;
     let msg = '', ok = false;
     octxLive.clearRect(0, 0, overlay.width, overlay.height);
     if (d.found) a.notFoundSince = null;
     const over = d.found && d.fields.some((p) => C.regionStats(g.image.data, g.image.width, g.image.height, p.x, p.y, Math.max(3, p.side * 0.3)).clippedFrac > t.maxClippedFrac);
-    if (!d.found) msg = notFoundMsg('Se caută cele trei triunghiuri…');
+    if (!d.found && d.reason === 'glare') { a.notFoundSince = null; msg = 'Reflexie pe etichetă: înclinați puțin telefonul sau mutați lumina'; }
+    else if (!d.found) msg = notFoundMsg('Se caută eticheta indicatorului…');
     else if (d.multiple) msg = 'Un singur indicator în cadru, vă rog';
     else if (d.touchesBorder) msg = 'Îndepărtați telefonul: triunghiurile trebuie să fie în interiorul chenarului punctat';
-    else if (Math.min.apply(null, d.fields.map((p) => p.side)) * toFull * 0.3 < 12) msg = 'Apropiați telefonul';
+    else if (d.fields[0].side * toFull * 0.3 < 8) msg = 'Apropiați telefonul: eticheta trebuie să ocupe cam jumătate din lățimea chenarului (acum ' + Math.round(d.labelFrac * 100) + '%)';
     else if (over) msg = lowerExposure() ? 'Prea multă lumină pe indicator: se reduce expunerea…' : 'Prea multă lumină pe indicator: umbriți-l ușor sau schimbați unghiul';
     else if (t.useTiltSensor && tiltFresh() && state.tilt.deg > t.maxTiltDeg) msg = 'Țineți telefonul mai aproape de orizontală: ' + Math.round(state.tilt.deg) + '° (max. ' + t.maxTiltDeg + '°)';
     else ok = true;
     if (d.found) {
       octxLive.lineWidth = 3; octxLive.strokeStyle = ok ? '#00e676' : '#ffea00';
       d.fields.forEach((p) => { octxLive.beginPath(); octxLive.arc(p.x, p.y, p.side * 0.6, 0, Math.PI * 2); octxLive.stroke(); });
+      const b = d.band, c = Math.cos(b.ang) * b.len / 2, s = Math.sin(b.ang) * b.len / 2; // the title band the label was found by
+      octxLive.beginPath(); octxLive.moveTo(b.cx - c, b.cy - s); octxLive.lineTo(b.cx + c, b.cy + s); octxLive.stroke();
     }
     if (ok) {
       const moved = a.last ? Math.max.apply(null, d.fields.map((p, i) => Math.hypot(p.x - a.last[i].x, p.y - a.last[i].y))) : Infinity;
@@ -456,15 +460,15 @@
   // Automatic fields on the captured frame: find the three triangles and read them
   function autoPatches() {
     const f = state.frame;
-    const d = D.detectPatches(f.data, f.width, f.height);
+    const d = D.detectStrip(f.data, f.width, f.height);
     state.patchPts = []; state.patchSize = null;
     if (!d.found || d.fields.length < thr().patches) {
       state.lastReading = null; $('resultSection').classList.add('hidden');
-      state.autoNote = 'Triunghiurile nu au fost găsite automat. '; redraw(); state.autoNote = '';
+      state.autoNote = (d.reason === 'glare' ? 'Reflexie pe etichetă: triunghiurile nu au fost găsite automat. ' : 'Triunghiurile nu au fost găsite automat. ') + 'Atingeți fiecare triunghi; caseta se potrivește singură. '; redraw(); state.autoNote = '';
       return;
     }
     state.patchPts = d.fields.map((p) => ({ x: p.x, y: p.y }));
-    state.patchSize = Math.max(6, Math.round(Math.min.apply(null, d.fields.map((p) => p.side)) * 0.3)); // box well inside each triangle
+    state.patchSize = Math.max(6, Math.round(d.fields[0].side * 0.3)); // box well inside each triangle
     measurePatches();
     if (state.lastReading) {
       state.lastReading.autoFields = true;
@@ -505,7 +509,7 @@
   }
 
   function resetRegions() {
-    state.roiIndicator = null; state.roiWhite = null; state.corners = []; state.patchPts = []; state.patchSize = null; state.lastReading = null;
+    state.roiIndicator = null; state.roiWhite = null; state.corners = []; state.patchPts = []; state.patchSize = null; state.patchSizeManual = false; state.lastReading = null;
     $('resultSection').classList.add('hidden');
     redraw();
   }
@@ -604,7 +608,13 @@
     const y = ((ev.clientY - rect.top) / rect.height) * frameCanvas.height;
     if (state.product.method === 'patches') {
       if (state.patchPts.length >= thr().patches) { state.patchPts = []; state.patchSize = null; state.lastReading = null; $('resultSection').classList.add('hidden'); }
-      state.patchPts.push({ x: x, y: y });
+      // Fit the box to the tapped triangle (centre + size), unless the slider was moved by hand
+      const fa = D.fieldAt(state.frame.data, state.frame.width, state.frame.height, { x: x, y: y });
+      if (fa && !state.patchSizeManual) {
+        state.patchPts.push({ x: fa.x, y: fa.y, fit: true });
+        const sz = Math.max(6, Math.round(fa.side * 0.3));
+        state.patchSize = state.patchSize ? Math.min(state.patchSize, sz) : sz;
+      } else state.patchPts.push({ x: x, y: y });
       if (state.patchPts.length === thr().patches) measure();
       redraw();
     } else if (state.product.method === 'vial') {
@@ -1144,7 +1154,7 @@
   $('btnNotRead').addEventListener('click', notRead);
   frameCanvas.addEventListener('click', onFrameTap);
   $('roiSize').addEventListener('input', () => {
-    if (state.product.method === 'patches') { state.patchSize = null; if (state.patchPts.length === thr().patches) measure(); redraw(); return; }
+    if (state.product.method === 'patches') { state.patchSize = null; state.patchSizeManual = true; if (state.patchPts.length === thr().patches) measure(); redraw(); return; }
     redraw(); if (state.roiIndicator && state.roiWhite) measure();
   });
   $('btnSkipWhite').addEventListener('click', () => { state.roiWhite = 'skipped'; redraw(); measure(); });

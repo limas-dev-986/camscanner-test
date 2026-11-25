@@ -430,7 +430,190 @@
     return { found: true, fields, touchesBorder: best.t.some((b) => b.edge), multiple };
   }
 
-  const api = { detectPattern, detectPatches, rectify, squareToQuad, quadToSquare, convexHull, DEFAULTS };
+  // ---- Type 5 strip: find the label by its black title band, then read the triangles at their fixed place ----
+  // Layout in band units (band length = 1, origin = band centre, u along the band, v across it, label upright).
+  // Measured on real strips: triangles left of the band, the QR code and the "blue to pink" arrow below-left.
+  const STRIP = {
+    workWidth: 360,
+    darkRel: 0.15,          // band pixels: darker than 15% of the bright paper (linear luminance)
+    bandAspMin: 9, bandAspMax: 16, bandFill: 0.5,
+    brokenAspMin: 5,        // a shorter dark bar of this shape = band cut by glare
+    tri: [[-0.768, -0.053], [-0.839, 0.092], [-0.701, 0.092]],
+    triSide: 0.115,
+    qr: [-0.407, 0.225], qrR: 0.07, qrMin: 0.15,
+    arrow: [-0.77, 0.225], arrowR: 0.05, arrowMin: 0.1,
+    maxErr: 0.05,           // refined triangle centre may move at most 5% of the band length
+    minFieldFrac: 0.1,
+    region: [[-0.95, -0.2], [-0.6, -0.2], [-0.95, 0.22], [-0.6, 0.22]] // must be inside the frame
+  };
+  function lumaAt(data, w, x, y) {
+    const i = ((y | 0) * w + (x | 0)) * 4;
+    return 0.2126 * LINT[data[i]] + 0.7152 * LINT[data[i + 1]] + 0.0722 * LINT[data[i + 2]];
+  }
+  const LINT = (function () { const t = new Float32Array(256); for (let i = 0; i < 256; i++) { const c = i / 255; t[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); } return t; })();
+  function windowPx(data, w, h, p, r) {
+    const out = [], x0 = Math.max(0, Math.round(p.x - r)), x1 = Math.min(w - 1, Math.round(p.x + r)), y0 = Math.max(0, Math.round(p.y - r)), y1 = Math.min(h - 1, Math.round(p.y + r));
+    const st = r > 12 ? 2 : 1;
+    for (let y = y0; y <= y1; y += st) for (let x = x0; x <= x1; x += st) out.push([x, y, lumaAt(data, w, x, y)]);
+    return out;
+  }
+  function pct(px, q) { const s = px.map((a) => a[2]).sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(s.length * q))]; }
+  // Centre of the mid-tone (printed indicator) pixels near p, judged against the paper in the same window
+  function refineField(data, w, h, p, r) {
+    const px = windowPx(data, w, h, p, r);
+    if (px.length < 9) return null;
+    const white = pct(px, 0.9);
+    let sx = 0, sy = 0, n = 0;
+    for (const a of px) if (a[2] < white * 0.82 && a[2] > white * 0.2) { sx += a[0]; sy += a[1]; n++; }
+    return n ? { x: sx / n, y: sy / n, frac: n / px.length } : { x: p.x, y: p.y, frac: 0 };
+  }
+  function darkFrac(data, w, h, p, r) {
+    const px = windowPx(data, w, h, p, r);
+    if (px.length < 9) return 0;
+    const white = pct(px, 0.95);
+    let n = 0; for (const a of px) if (a[2] < white * 0.2) n++;
+    return n / px.length;
+  }
+  function minAreaRect(pts) {
+    const hull = convexHull(pts);
+    let best = null;
+    for (let i = 0; i < hull.length; i++) {
+      const p = hull[i], q = hull[(i + 1) % hull.length], a = Math.atan2(q.y - p.y, q.x - p.x), c = Math.cos(a), s = Math.sin(a);
+      let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+      for (const k of hull) { const u = k.x * c + k.y * s, v = -k.x * s + k.y * c; if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v; }
+      const A = (u1 - u0) * (v1 - v0);
+      if (!best || A < best.A) best = { a, u0, u1, v0, v1, A };
+    }
+    if (!best) return null;
+    const cu = (best.u0 + best.u1) / 2, cv = (best.v0 + best.v1) / 2, c = Math.cos(best.a), s = Math.sin(best.a);
+    let len = best.u1 - best.u0, thk = best.v1 - best.v0, ang = best.a;
+    if (thk > len) { const t = len; len = thk; thk = t; ang += Math.PI / 2; }
+    return { cx: cu * c - cv * s, cy: cu * s + cv * c, len, thk, ang, area: best.A };
+  }
+  function findBands(data, w, h, o) {
+    const s = Math.max(1, Math.ceil(w / o.workWidth)), ww = Math.floor(w / s), wh = Math.floor(h / s), n = ww * wh;
+    const Y = new Float32Array(n);
+    for (let y = 0; y < wh; y++) for (let x = 0; x < ww; x++) {
+      let t = 0;
+      for (let dy = 0; dy < s; dy++) { let i = ((y * s + dy) * w + x * s) * 4; for (let dx = 0; dx < s; dx++, i += 4) t += 0.2126 * LINT[data[i]] + 0.7152 * LINT[data[i + 1]] + 0.0722 * LINT[data[i + 2]]; }
+      Y[y * ww + x] = t / (s * s);
+    }
+    const bright = Float32Array.from(Y).sort()[Math.floor(n * 0.95)];
+    const m = new Uint8Array(n);
+    for (let k = 0; k < n; k++) if (Y[k] < bright * o.darkRel) m[k] = 1;
+    const morph = (a, dil) => {
+      const r = new Uint8Array(n);
+      for (let y = 0; y < wh; y++) for (let x = 0; x < ww; x++) {
+        let v = dil ? 0 : 1;
+        for (let dy = -1; dy <= 1 && (dil ? !v : v); dy++) for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy, q = nx < 0 || ny < 0 || nx >= ww || ny >= wh ? 0 : a[ny * ww + nx];
+          if (dil && q) { v = 1; break; } if (!dil && !q) { v = 0; break; }
+        }
+        r[y * ww + x] = v;
+      }
+      return r;
+    };
+    const closed = morph(morph(m, true), false); // bridge the letters inside the band
+    const seen = new Uint8Array(n), bands = [];
+    let broken = false;
+    for (let i = 0; i < n; i++) {
+      if (!closed[i] || seen[i]) continue;
+      const st = [i], pts = []; seen[i] = 1;
+      while (st.length) {
+        const k = st.pop(), x = k % ww, y = (k - x) / ww;
+        pts.push({ x: x + 0.5, y: y + 0.5 });
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= ww || ny >= wh) continue;
+          const q = ny * ww + nx; if (closed[q] && !seen[q]) { seen[q] = 1; st.push(q); }
+        }
+      }
+      if (pts.length < 30) continue;
+      const r = minAreaRect(pts);
+      if (!r) continue;
+      r.len += 1; r.thk += 1; // pixel centres -> pixel edges
+      const asp = r.len / r.thk, fill = pts.length / (r.len * r.thk);
+      if (fill < o.bandFill) continue;
+      if (asp >= o.bandAspMin && asp <= o.bandAspMax) bands.push({ cx: r.cx * s, cy: r.cy * s, len: r.len * s, thk: r.thk * s, ang: r.ang, asp });
+      else if (asp >= o.brokenAspMin && asp < o.bandAspMin && pts.length > 200) broken = true;
+    }
+    bands.sort((a, b) => b.len - a.len);
+    return { bands, broken };
+  }
+  function readBand(data, w, h, b, o) {
+    let best = null;
+    for (let flip = 0; flip < 2; flip++) {
+      const ang = b.ang + (flip ? Math.PI : 0), c = Math.cos(ang), s = Math.sin(ang);
+      const at = (uv) => ({ x: b.cx + (uv[0] * c - uv[1] * s) * b.len, y: b.cy + (uv[0] * s + uv[1] * c) * b.len });
+      const qr = darkFrac(data, w, h, at(o.qr), o.qrR * b.len), ar = darkFrac(data, w, h, at(o.arrow), o.arrowR * b.len);
+      const pred = o.tri.map(at), side = o.triSide * b.len;
+      const ref = pred.map((p) => refineField(data, w, h, p, side * 0.5));
+      if (ref.some((q) => !q)) continue;
+      const score = qr + ar + ref.reduce((t, q) => t + q.frac, 0) / 3;
+      if (!best || score > best.score) best = { score, qr, ar, pred, ref, side, region: o.region.map(at) };
+    }
+    if (!best) return null;
+    const err = Math.max.apply(null, best.ref.map((q, i) => Math.hypot(q.x - best.pred[i].x, q.y - best.pred[i].y))) / b.len;
+    const ok = err <= o.maxErr && best.ref.every((q) => q.frac >= o.minFieldFrac) && best.ar >= o.arrowMin && best.qr >= o.qrMin;
+    return ok ? best : null;
+  }
+  function detectStrip(data, width, height, options) {
+    const o = Object.assign({}, STRIP, options || {});
+    const fb = findBands(data, width, height, o);
+    const valid = [];
+    for (const b of fb.bands.slice(0, 4)) { const r = readBand(data, width, height, b, o); if (r) valid.push({ b, r }); }
+    if (!valid.length) return { found: false, reason: fb.broken ? 'glare' : (fb.bands.length ? 'no label' : 'no band') };
+    const { b, r } = valid[0];
+    const m = 0.01 * width;
+    return {
+      found: true,
+      fields: r.ref.map((q) => ({ x: q.x, y: q.y, side: r.side })),
+      touchesBorder: r.region.some((p) => p.x < m || p.y < m || p.x > width - m || p.y > height - m),
+      multiple: valid.length > 1,
+      labelFrac: Math.min(1, (b.len * 1.9) / width), // label length vs frame width
+      band: { cx: b.cx, cy: b.cy, len: b.len, ang: b.ang }
+    };
+  }
+
+  // Manual tap on a triangle: grow the printed field around the tap (mid-tone vs the paper nearby)
+  // and return its centre and size, so the measuring box fits inside it.
+  function fieldAt(data, width, height, p, rMax) {
+    const r = Math.round(rMax || 0.08 * width);
+    const x0 = Math.max(0, Math.round(p.x - r)), x1 = Math.min(width - 1, Math.round(p.x + r)), y0 = Math.max(0, Math.round(p.y - r)), y1 = Math.min(height - 1, Math.round(p.y + r));
+    const ww = x1 - x0 + 1, wh = y1 - y0 + 1;
+    if (ww < 5 || wh < 5) return null;
+    const Y = new Float32Array(ww * wh);
+    for (let y = 0; y < wh; y++) for (let x = 0; x < ww; x++) Y[y * ww + x] = lumaAt(data, width, x0 + x, y0 + y);
+    const white = Float32Array.from(Y).sort()[Math.floor(Y.length * 0.9)];
+    const tx = Math.round(p.x) - x0, ty = Math.round(p.y) - y0;
+    // Pale (pink) fields sit close to the paper: if the region spills into the surroundings, try a stricter cut
+    let last = null;
+    for (const cut of [0.82, 0.76, 0.7, 0.64]) {
+      const inF = (k) => Y[k] < white * cut && Y[k] > white * 0.2;
+      let start = -1; // the field pixel nearest to the tap
+      for (let d = 0; d <= Math.min(12, r) && start < 0; d++) for (let dy = -d; dy <= d && start < 0; dy++) for (let dx = -d; dx <= d; dx++) {
+        const x = tx + dx, y = ty + dy; if (x < 0 || y < 0 || x >= ww || y >= wh) continue;
+        if (inF(y * ww + x)) { start = y * ww + x; break; }
+      }
+      if (start < 0) break;
+      const seen = new Uint8Array(ww * wh), st = [start];
+      let n = 0, sx = 0, sy = 0, edge = false; seen[start] = 1;
+      while (st.length) {
+        const k = st.pop(), x = k % ww, y = (k - x) / ww;
+        n++; sx += x; sy += y;
+        if (x === 0 || y === 0 || x === ww - 1 || y === wh - 1) edge = true;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= ww || ny >= wh) continue;
+          const q = ny * ww + nx; if (!seen[q] && inF(q)) { seen[q] = 1; st.push(q); }
+        }
+      }
+      const side = Math.sqrt((4 * n) / Math.sqrt(3)); // equilateral triangle with the same area
+      last = { x: x0 + sx / n, y: y0 + sy / n, side, touchesWindow: edge };
+      if (!edge && side < r) return last;
+    }
+    return last && !last.touchesWindow ? last : null;
+  }
+
+  const api = { detectPattern, detectPatches, detectStrip, refineField, fieldAt, STRIP, rectify, squareToQuad, quadToSquare, convexHull, DEFAULTS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Detect = api;
 })(typeof window !== 'undefined' ? window : this);

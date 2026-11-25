@@ -137,5 +137,69 @@ const TPK = [222, 178, 200], TBL = [176, 180, 205];
 const noTri = strip([[238, 236, 232], [238, 236, 232], [238, 236, 232]]);
 check('fields: label without triangles -> not found', !D.detectPatches(noTri.data, noTri.w, noTri.h).found);
 
+// ---- Type 5 label found by its black title band (label-first detection) ----
+// Label drawn in band units: band length = 1, origin at the band centre, upright = triangles on the left.
+const TRI_UV = [[-0.768, -0.053], [-0.839, 0.092], [-0.701, 0.092]];
+function inTriangle(u, v, c, side) { // equilateral, apex up
+  const h = side * 0.866, top = c[1] - h * 0.6, bot = c[1] + h * 0.4;
+  if (v < top || v > bot) return false;
+  return Math.abs(u - c[0]) <= ((v - top) / h) * side / 2;
+}
+function labelColour(u, v, tri, qrBits) {
+  if (u < -0.99 || u > 0.86 || v < -0.29 || v > 0.42) return null;
+  if (Math.abs(u) <= 0.5 && Math.abs(v) <= 0.041) return Math.abs(v) < 0.015 && Math.floor(u * 40) % 3 === 0 ? [235, 235, 235] : [20, 20, 22];
+  for (const c of TRI_UV) if (inTriangle(u, v, c, 0.115)) return tri;
+  const qu = (u + 0.407) / 0.14 + 0.5, qv = (v - 0.225) / 0.14 + 0.5;
+  if (qu >= 0 && qu < 1 && qv >= 0 && qv < 1) return qrBits[Math.floor(qv * 9) * 9 + Math.floor(qu * 9)] ? [25, 25, 25] : [240, 240, 238];
+  if (Math.abs(u + 0.77) < 0.07 && Math.abs(v - 0.225) < 0.009) return [25, 25, 25];
+  return [240, 240, 238];
+}
+function labelScene(labels, opts) {
+  const o = Object.assign({ w: 640, h: 480, bg: [170, 185, 200], noise: 6 }, opts || {});
+  const qrBits = []; for (let i = 0; i < 81; i++) qrBits.push(rnd() > 0);
+  const d = new Uint8ClampedArray(o.w * o.h * 4), truth = [];
+  labels.forEach((L) => { const a = L.deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a); truth.push(TRI_UV.map((t) => ({ x: L.cx + (t[0] * c - t[1] * s) * L.len, y: L.cy + (t[0] * s + t[1] * c) * L.len }))); });
+  for (let y = 0; y < o.h; y++) for (let x = 0; x < o.w; x++) {
+    let col = o.bg;
+    for (const L of labels) {
+      const a = L.deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), dx = (x + 0.5 - L.cx) / L.len, dy = (y + 0.5 - L.cy) / L.len;
+      const k = labelColour(dx * c + dy * s, -dx * s + dy * c, L.tri, qrBits);
+      if (k) { col = k; break; }
+    }
+    const i = (y * o.w + x) * 4, n = rnd() * o.noise;
+    d[i] = col[0] + n; d[i + 1] = col[1] + n; d[i + 2] = col[2] + n; d[i + 3] = 255;
+  }
+  return { data: d, w: o.w, h: o.h, truth };
+}
+const TBLUE = [150, 160, 205], TPINK = [225, 165, 195];
+function stripCase(name, labels, expect, opts) {
+  const sc = labelScene(labels, opts), r = D.detectStrip(sc.data, sc.w, sc.h);
+  if (expect.found === false) { check('strip: ' + name + ' -> not found', !r.found, JSON.stringify(r).slice(0, 160)); return r; }
+  check('strip: ' + name + ' -> found', r.found, JSON.stringify(r).slice(0, 160));
+  if (!r.found) return r;
+  const t = sc.truth[0], err = Math.max.apply(null, r.fields.map((f) => Math.min.apply(null, t.map((p) => Math.hypot(f.x - p.x, f.y - p.y)))));
+  check('strip: ' + name + ' -> triangles within ' + (0.03 * labels[0].len).toFixed(0) + ' px (' + err.toFixed(1) + ')', err < 0.03 * labels[0].len);
+  if ('multiple' in expect) check('strip: ' + name + ' -> multiple = ' + expect.multiple, r.multiple === expect.multiple);
+  if ('border' in expect) check('strip: ' + name + ' -> touchesBorder = ' + expect.border, r.touchesBorder === expect.border);
+  return r;
+}
+stripCase('upright, blue', [{ cx: 340, cy: 230, len: 300, deg: 0, tri: TBLUE }], { multiple: false, border: false });
+stripCase('upside down, pink', [{ cx: 300, cy: 250, len: 300, deg: 180, tri: TPINK }], { multiple: false, border: false });
+stripCase('rotated 25°, pink', [{ cx: 330, cy: 240, len: 260, deg: 25, tri: TPINK }], { border: false });
+stripCase('portrait (90°), blue', [{ cx: 320, cy: 250, len: 230, deg: 90, tri: TBLUE }], { border: false });
+stripCase('small (live frame size)', [{ cx: 180, cy: 135, len: 110, deg: 4, tri: TBLUE }], {}, { w: 360, h: 270 });
+stripCase('two labels', [{ cx: 330, cy: 130, len: 260, deg: 0, tri: TBLUE }, { cx: 330, cy: 360, len: 260, deg: 0, tri: TPINK }], { multiple: true });
+stripCase('triangles near frame edge', [{ cx: 285, cy: 240, len: 300, deg: 0, tri: TBLUE }], { border: true });
+stripCase('label without triangles', [{ cx: 340, cy: 230, len: 300, deg: 0, tri: [240, 240, 238] }], { found: false });
+const bdScene = scene(rot(320, 240, 400, 300, 0), BLACK), rbd = D.detectStrip(bdScene.data, bdScene.w, bdScene.h);
+check('strip: black striped sheet -> not found', !rbd.found);
+const pinkScene = scene(rot(320, 240, 400, 300, 0), PINK), rpk = D.detectStrip(pinkScene.data, pinkScene.w, pinkScene.h);
+check('strip: pink striped sheet -> not found', !rpk.found);
+// Manual tap: the box fits the tapped triangle
+const tapSc = labelScene([{ cx: 340, cy: 230, len: 300, deg: 0, tri: TPINK }]);
+const fa = D.fieldAt(tapSc.data, tapSc.w, tapSc.h, { x: tapSc.truth[0][1].x + 5, y: tapSc.truth[0][1].y + 3 });
+check('tap: field found near tap', !!fa && Math.hypot(fa.x - tapSc.truth[0][1].x, fa.y - tapSc.truth[0][1].y) < 6, JSON.stringify(fa));
+check('tap: size matches the triangle (34 px side)', !!fa && Math.abs(fa.side - 0.115 * 300) < 7, fa && fa.side.toFixed(1));
+
 console.log(failed ? '\n' + failed + ' test(s) failed' : '\nall tests passed');
 process.exit(failed ? 1 : 0);
