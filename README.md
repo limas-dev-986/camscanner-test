@@ -160,6 +160,10 @@ The *Poziția probei* list matches the five placements of the printed plan: 1 st
 
 The tick box *Telefon înclinat intenționat (coloana E)* marks the tilted-phone column; it is logged as `phoneTilted` and stays ticked until unticked. The phone's measured tilt is logged separately (`tiltDeg`).
 
+## Correcting the log
+
+Section 6 lists every saved reading, newest first, with a checkbox per row (the box in the header selects all). Tick the wrong readings and press *Șterge citirile selectate* twice (the second press confirms). The numbering closes up, so the exported CSV/JSON has no gaps; export again if you had exported before. The position field (reading 1–5) is not changed by a deletion: set it back by hand before repeating the reading. *Șterge jurnalul* still deletes everything.
+
 ## Diagnostics
 
 - **Nu s-a putut citi:** shown while the automatic scan is running. One tap records the attempt in the log as `necitit` (not read), with the last message the tool was showing, how long it had been trying, and the usual tester fields; the frame of that moment is downloaded to the phone. Such a reading counts as one of the readings planned for that sample and condition. The log summary counts them separately. `autoWaitSec` is also logged for successful automatic captures.

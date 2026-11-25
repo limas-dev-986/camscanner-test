@@ -54,6 +54,9 @@
   .hidden { display:none !important; }
   details > summary { cursor:pointer; font-weight:600; }
   .scroll { overflow-x:auto; }
+  .logscroll { max-height: 60vh; overflow-y:auto; }
+  #logTable input[type=checkbox] { width:1.4em; height:1.4em; }
+  #logTable tr.sel td { background:#ffe9e6; }
 </style>
 </head>
 <body>
@@ -202,7 +205,12 @@
   <section>
     <h2>6. Jurnalul testelor</h2>
     <p id="logSummary" class="muted"></p>
-    <div class="scroll"><table id="logTable"></table></div>
+    <p class="muted">Bifați citirile greșite și apăsați „Șterge citirile selectate” (de două ori, pentru confirmare). Cea mai nouă citire este sus.</p>
+    <div class="scroll logscroll"><table id="logTable"></table></div>
+    <div class="row">
+      <button id="btnDeleteSel" class="danger" disabled>Șterge citirile selectate</button>
+    </div>
+    <p id="logStatus" class="muted"></p>
     <div class="row">
       <button id="btnExportCsv">Exportă CSV</button>
       <button id="btnExportJson">Exportă JSON</button>

@@ -4,7 +4,7 @@
   const C = window.Colour;
   const D = window.Detect;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-25.3';
+  const BUILD = '2026-11-25.4';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -1026,14 +1026,31 @@
     const nr = L.filter((e) => e.predicted === 'necitit').length;
     $('logSummary').innerHTML = L.length + ' citiri · ' + correct + '/' + judged.length + ' corespund rezultatului așteptat · ' +
       unc + ' incerte · ' + nr + ' necitite · ' + (unsafe ? '<span class="warn">' + unsafe + ' NESIGURE</span>' : '0 nesigure');
-    const last = L.slice(-10).reverse();
-    $('logTable').innerHTML = last.length
-      ? '<tr><th>Nr.</th><th>Ora</th><th>Obiect</th><th>Probă</th><th>Iluminare</th><th>Așteptat</th><th>Citit</th></tr>' +
-        last.map((e, i) => '<tr><td>' + (L.length - i) + '</td><td>' + escapeHtml(e.timestamp.slice(11, 19)) + '</td><td>' +
-          escapeHtml(e.product || 'bi-vial') + '</td><td>' + escapeHtml(e.sampleId) + '</td><td>' + escapeHtml(optionText('lighting', e.lighting)) + '</td><td>' +
+    // All readings, newest first; tick rows to delete wrong ones (numbers close up after a deletion)
+    const sel = state.logSel || (state.logSel = new Set());
+    [...sel].forEach((ts) => { if (!L.some((e) => e.timestamp === ts)) sel.delete(ts); });
+    const rows = L.map((e, i) => ({ e, n: i + 1 })).reverse();
+    $('logTable').innerHTML = rows.length
+      ? '<tr><th><input type="checkbox" id="logSelAll" aria-label="Selectează toate"' + (sel.size === L.length ? ' checked' : '') + '></th><th>Nr.</th><th>Ora</th><th>Obiect</th><th>Probă</th><th>Poz.</th><th>Iluminare</th><th>Așteptat</th><th>Citit</th></tr>' +
+        rows.map(({ e, n }) => '<tr' + (sel.has(e.timestamp) ? ' class="sel"' : '') + '><td><input type="checkbox" class="logSel" data-ts="' + escapeHtml(e.timestamp) + '" aria-label="Selectează citirea ' + n + '"' + (sel.has(e.timestamp) ? ' checked' : '') + '></td><td>' + n + '</td><td>' + escapeHtml(e.timestamp.slice(11, 19)) + '</td><td>' +
+          escapeHtml(e.product || 'bi-vial') + '</td><td>' + escapeHtml(e.sampleId) + '</td><td>' + escapeHtml(String(e.angle || '').split(' ')[0]) + '</td><td>' + escapeHtml(optionText('lighting', e.lighting)) + '</td><td>' +
           escapeHtml(CLS_RO[e.expected] || e.expected) + '</td><td>' + (e.unsafeError ? '<span class="warn">' : '') + escapeHtml(CLS_RO[e.predicted] || e.predicted) +
           (e.unsafeError ? '</span>' : '') + '</td></tr>').join('')
       : '<tr><td class="muted">Nicio citire salvată.</td></tr>';
+    const btn = $('btnDeleteSel');
+    btn.disabled = !sel.size;
+    if (!btn.dataset.armed) btn.textContent = deleteSelLabel();
+  }
+  function deleteSelLabel() { const n = state.logSel ? state.logSel.size : 0; return 'Șterge citirile selectate' + (n ? ' (' + n + ')' : ''); }
+  function deleteSelected() {
+    const sel = state.logSel;
+    if (!sel || !sel.size) return;
+    const n = sel.size;
+    state.log = state.log.filter((e) => !sel.has(e.timestamp));
+    sel.clear();
+    store.set(K.log, state.log);
+    renderLog();
+    $('logStatus').textContent = n + (n === 1 ? ' citire ștearsă' : ' citiri șterse') + '. Numerotarea s-a refăcut; exportați din nou jurnalul dacă l-ați exportat înainte.';
   }
 
   function toCsv(rows) {
@@ -1280,7 +1297,17 @@
   $('btnExportJson').addEventListener('click', () => download(fileStem() + '.json', JSON.stringify({
     exported: nowIso(), build: BUILD, capabilityReport: state.capReport, thresholds: state.thresholds, references: state.refs, log: state.log,
   }, null, 2), 'application/json'));
-  $('btnClearLog').addEventListener('click', (e) => armButton(e.target, 'Șterge jurnalul', () => { state.log = []; store.set(K.log, state.log); renderLog(); }));
+  $('btnClearLog').addEventListener('click', (e) => armButton(e.target, 'Șterge jurnalul', () => { state.log = []; if (state.logSel) state.logSel.clear(); store.set(K.log, state.log); renderLog(); }));
+  $('btnDeleteSel').addEventListener('click', (e) => armButton(e.target, deleteSelLabel(), deleteSelected));
+  $('logTable').addEventListener('change', (e) => {
+    const sel = state.logSel || (state.logSel = new Set());
+    if (e.target.id === 'logSelAll') { if (e.target.checked) state.log.forEach((x) => sel.add(x.timestamp)); else sel.clear(); }
+    else if (e.target.classList.contains('logSel')) { if (e.target.checked) sel.add(e.target.dataset.ts); else sel.delete(e.target.dataset.ts); }
+    else return;
+    const b = $('btnDeleteSel'); delete b.dataset.armed; // selection changed: confirmation starts again
+    $('logStatus').textContent = '';
+    renderLog();
+  });
   $('thresholdGrid').addEventListener('change', onThresholdChange);
   $('btnResetThresholds').addEventListener('click', () => {
     state.thresholds[state.product.id] = Object.assign({}, rulesOf(state.product));
