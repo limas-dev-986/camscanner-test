@@ -4,7 +4,7 @@
   const C = window.Colour;
   const D = window.Detect;
   const PRODUCTS = window.PRODUCTS;
-  const BUILD = '2026-11-25.2';
+  const BUILD = '2026-11-25.3';
   const $ = (id) => document.getElementById(id);
 
   // ---------- storage (localStorage can be unavailable) ----------
@@ -252,31 +252,56 @@
   }
 
   // Lock = switch to manual mode and pin the value the camera is using right now.
+  // Some phones report a current value outside their own allowed range (e.g. focusDistance on Android Chrome):
+  // then the mode is set without a value first (camera keeps its current focus), else the value clamped to the range;
+  // if the phone refuses both, the option is switched off as not working on this phone.
+  function clampToCap(k, v) {
+    const r = trackCaps()[k];
+    if (v === undefined || v === null || !r || typeof r !== 'object' || !('min' in r)) return v;
+    let x = Math.min(r.max, Math.max(r.min, v));
+    if (r.step > 0) x = Math.min(r.max, r.min + Math.round((x - r.min) / r.step) * r.step);
+    return x;
+  }
   async function setLock(kind, on) {
     if (!state.track) return;
     const s = trackSettings();
     const c = {};
+    let valueKey = null;
     if (kind === 'exposure') {
       c.exposureMode = on ? 'manual' : 'continuous';
-      if (on && s.exposureTime) c.exposureTime = s.exposureTime;
+      if (on && s.exposureTime) { valueKey = 'exposureTime'; c.exposureTime = clampToCap('exposureTime', s.exposureTime); }
     } else if (kind === 'wb') {
       c.whiteBalanceMode = on ? 'manual' : 'continuous';
-      if (on && s.colorTemperature) c.colorTemperature = s.colorTemperature;
+      if (on && s.colorTemperature) { valueKey = 'colorTemperature'; c.colorTemperature = clampToCap('colorTemperature', s.colorTemperature); }
     } else if (kind === 'focus') {
       c.focusMode = on ? 'manual' : 'continuous';
-      if (on && s.focusDistance !== undefined) c.focusDistance = s.focusDistance;
+      if (on && s.focusDistance !== undefined) { valueKey = 'focusDistance'; c.focusDistance = clampToCap('focusDistance', s.focusDistance); }
     } else if (kind === 'torch') {
       c.torch = !!on;
     }
-    try {
-      await state.track.applyConstraints({ advanced: [c] });
-      state.locks[kind] = on;
-      $('lockStatus').textContent = KIND_RO[kind] + (on ? ': blocat / pornit' : ': automat / oprit') + ' · aplicat: ' + JSON.stringify(c);
-    } catch (e) {
-      state.locks[kind] = false;
-      const box = { exposure: 'lockExposure', wb: 'lockWB', focus: 'lockFocus', torch: 'torch' }[kind];
-      $(box).checked = false;
-      $('lockStatus').innerHTML = '<span class="warn">Nu s-a putut aplica reglajul (' + KIND_RO[kind] + '): ' + escapeHtml(e.name + ' ' + e.message) + '</span>';
+    const box = { exposure: 'lockExposure', wb: 'lockWB', focus: 'lockFocus', torch: 'torch' }[kind];
+    const attempts = [c];
+    if (valueKey) { // value outside the range = the phone's reading is unreliable: first try to hold the current one by mode only
+      const c2 = Object.assign({}, c); delete c2[valueKey];
+      if (c[valueKey] !== s[valueKey]) attempts.unshift(c2); else attempts.push(c2);
+    }
+    let lastErr = null;
+    for (const a of attempts) {
+      try {
+        await state.track.applyConstraints({ advanced: [a] });
+        state.locks[kind] = on;
+        $('lockStatus').textContent = KIND_RO[kind] + (on ? ': blocat / pornit' : ': automat / oprit') + ' · aplicat: ' + JSON.stringify(a);
+        return;
+      } catch (e) { lastErr = e; }
+    }
+    state.locks[kind] = false;
+    $(box).checked = false;
+    if (on && kind !== 'torch') { // the phone lists the option but refuses it: hide it for this camera
+      $(box).disabled = true;
+      $('lockStatus').innerHTML = '<span class="warn">Blocarea (' + KIND_RO[kind] + ') nu funcționează pe acest telefon: telefonul a refuzat reglajul (' + escapeHtml(lastErr.name + ' ' + lastErr.message) + '). Opțiunea a fost dezactivată; camera rămâne pe automat.</span>';
+      state.lockRefused = Object.assign(state.lockRefused || {}, { [kind]: lastErr.name + ' ' + lastErr.message });
+    } else {
+      $('lockStatus').innerHTML = '<span class="warn">Nu s-a putut aplica reglajul (' + KIND_RO[kind] + '): ' + escapeHtml(lastErr.name + ' ' + lastErr.message) + '</span>';
     }
   }
 
@@ -1188,6 +1213,7 @@
       ['Mod pentru balansul de alb', modes('whiteBalanceMode')],
       ['Interval pentru temperatura de culoare', range('colorTemperature')],
       ['Mod de focalizare', modes('focusMode')],
+      ['Blocări refuzate de telefon', state.lockRefused ? Object.keys(state.lockRefused).map((k) => KIND_RO[k] + ': ' + escapeHtml(state.lockRefused[k])).join('<br>') : 'niciuna până acum'],
       ['Interval pentru distanța de focalizare', range('focusDistance')],
       ['Lanternă', 'torch' in caps ? 'da' : 'indisponibilă'],
       ['API ImageCapture', yn(rep.imageCaptureApi)],
